@@ -35,6 +35,44 @@ This repository contains the scaffold for the Tipping Point sandbox workshop boo
 - `pyproject.toml` – dependency manifest and build configuration
 - `requirements.txt` – exact resolved versions (reproducibility artifact)
 
+## Public Frontend
+
+The existing React/TypeScript/Vite app is in `frontend/`. `/` is public and
+information-first; `/workshops`, `/workshops/:example-id`, `/continue`, and
+`/example-plan` show explicitly labelled editorial demonstrations. They do not
+call merchant APIs, save guest email, reserve places, or authorize payments.
+`/host` and `/host/login` preserve the existing authenticated merchant workspace.
+Host sign-in uses the real CSRF bootstrap, session cookie, `/api/me`, and logout
+contracts. Guest input never grants merchant access.
+
+Use the committed npm lockfile and local frontend tools:
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend run dev
+npm --prefix frontend run typecheck
+npm --prefix frontend test
+npm --prefix frontend run build
+npm --prefix frontend run test:browser
+```
+
+The dependency-free unit tests use Node's experimental TypeScript transform
+(verified with Node 24). The browser smoke suite uses installed Chrome and Node's
+WebSocket support, starts a temporary production preview on `127.0.0.1:4175`,
+and intercepts all API calls with test fixtures. It does not prove live
+authentication or provider integration. Set `CHROME_PATH` if Chrome is not at
+the default macOS location. Screenshots and isolated browser profiles stay in
+ignored `frontend/node_modules/.tmp/frontend-evidence/`; no existing browser
+profile is used. No separate lint tool is configured.
+
+Vite development forwards `/api` to the existing backend at port 8000.
+Run the backend separately with its documented local cookie/origin configuration
+to use real host authentication. Production asset serving under the backend
+origin remains a deployment prerequisite; `vite preview` is only a local check.
+Public listing endpoints, server-issued guest sessions, booking ownership and
+capacity controls, contact handling, and the connected Sandbox checkout and
+settlement flow are still required for genuine guest bookings.
+
 ## API
 
 The minimal FastAPI app provides a single endpoint for health‑checking:

@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc -b",
+    "test": "node --experimental-transform-types --test tests/*.test.mjs",
+    "test:browser": "npm run build && node tests/browser.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
