@@ -1,7 +1,8 @@
 """PostgreSQL regression tests for the foundation schema.
 
-All tests run through the guarded ``migrated_database`` fixture, which
-refuses to operate on any database outside the test allowlist.
+Every test registers the records it creates in the ``owned`` registry;
+teardown deletes exactly those records. The verification sentinel and
+any unrelated row are never touched.
 """
 
 from __future__ import annotations
@@ -14,6 +15,29 @@ from sqlalchemy.exc import IntegrityError
 
 from tipping_point.db.models import CampaignTerms, Merchant, Workshop
 from tipping_point.db.session import session_scope
+from tests.integration.conftest import _OwnedRecords
+
+
+def _make_workshop_owner(
+    owned: _OwnedRecords, title: str
+) -> tuple[uuid.UUID, uuid.UUID]:
+    merchant_id = uuid.uuid4()
+    workshop_id = uuid.uuid4()
+    with session_scope() as session:
+        session.add(Merchant(id=merchant_id, name=f"Host {uuid.uuid4().hex[:8]}"))
+        session.add(
+            Workshop(
+                id=workshop_id,
+                merchant_id=merchant_id,
+                title=title,
+                capacity=5,
+                ticket_price_minor=1500,
+                currency="GBP",
+            )
+        )
+    owned.add(Merchant, merchant_id)
+    owned.add(Workshop, workshop_id)
+    return merchant_id, workshop_id
 
 
 def test_connection_succeeds(migrated_database):
@@ -38,10 +62,11 @@ def test_connection_uses_dedicated_non_superuser(migrated_database):
     assert attrs == (False, False, False)
 
 
-def test_merchant_insert_and_retrieve(migrated_database):
+def test_merchant_insert_and_retrieve(owned):
     merchant_id = uuid.uuid4()
     with session_scope() as session:
         session.add(Merchant(id=merchant_id, name="Test Merchant"))
+    owned.add(Merchant, merchant_id)
     with session_scope() as session:
         merchant = session.scalars(
             select(Merchant).where(Merchant.id == merchant_id)
@@ -51,36 +76,21 @@ def test_merchant_insert_and_retrieve(migrated_database):
         assert merchant.updated_at is not None
 
 
-def test_workshop_insert_and_retrieve(migrated_database):
-    merchant_id = uuid.uuid4()
-    workshop_id = uuid.uuid4()
-    with session_scope() as session:
-        session.add(Merchant(id=merchant_id, name="Workshop Host"))
-        session.add(
-            Workshop(
-                id=workshop_id,
-                merchant_id=merchant_id,
-                title="Embroidery Basics",
-                description="Learn basic stitches.",
-                capacity=12,
-                ticket_price_minor=2500,
-                currency="GBP",
-            )
-        )
+def test_workshop_insert_and_retrieve(owned):
+    merchant_id, workshop_id = _make_workshop_owner(owned, "Embroidery Basics")
     with session_scope() as session:
         workshop = session.scalars(
             select(Workshop).where(Workshop.id == workshop_id)
         ).one()
+        assert workshop.merchant_id == merchant_id
         assert workshop.title == "Embroidery Basics"
-        assert workshop.capacity == 12
-        assert workshop.ticket_price_minor == 2500
+        assert workshop.capacity == 5
+        assert workshop.ticket_price_minor == 1500
         assert workshop.currency == "GBP"
 
 
-def test_workshop_capacity_constraints_reject_invalid(migrated_database):
-    merchant_id = uuid.uuid4()
-    with session_scope() as session:
-        session.add(Merchant(id=merchant_id, name="Capacity Test"))
+def test_workshop_capacity_constraints_reject_invalid(owned):
+    merchant_id, _ = _make_workshop_owner(owned, "Capacity Test")
     for bad_capacity in (0, -5):
         with pytest.raises(IntegrityError):
             with session_scope() as session:
@@ -96,33 +106,15 @@ def test_workshop_capacity_constraints_reject_invalid(migrated_database):
                 )
 
 
-def _make_workshop_owner(title: str):
-    merchant_id = uuid.uuid4()
-    workshop_id = uuid.uuid4()
-    with session_scope() as session:
-        session.add(Merchant(id=merchant_id, name=f"Host {uuid.uuid4().hex[:8]}"))
-        session.add(
-            Workshop(
-                id=workshop_id,
-                merchant_id=merchant_id,
-                title=title,
-                capacity=5,
-                ticket_price_minor=1500,
-                currency="GBP",
-            )
-        )
-    return merchant_id, workshop_id
-
-
-def test_merchant_deletion_is_restricted_while_workshops_exist(migrated_database):
-    merchant_id, workshop_id = _make_workshop_owner("Restrict Test")
+def test_merchant_deletion_is_restricted_while_workshops_exist(owned):
+    merchant_id, workshop_id = _make_workshop_owner(owned, "Restrict Test")
     # RESTRICT (migration 0002) must reject deleting a referenced merchant.
     with pytest.raises(IntegrityError):
         with session_scope() as session:
             session.delete(session.get(Merchant, merchant_id))
-    # After removing the workshop (flushed explicitly first, because the
-    # ORM declares no relationship and thus no ORM-level delete ordering),
-    # the merchant can be deleted.
+    # After removing the workshop (flushed first; the ORM declares no
+    # relationships, so the unit of work alone orders no deletes), the
+    # merchant can be deleted.
     with session_scope() as session:
         session.delete(session.get(Workshop, workshop_id))
         session.flush()
@@ -132,10 +124,10 @@ def test_merchant_deletion_is_restricted_while_workshops_exist(migrated_database
         assert session.get(Merchant, merchant_id) is None
 
 
-def test_workshop_deletion_is_restricted_while_terms_exist(migrated_database):
+def test_workshop_deletion_is_restricted_while_terms_exist(owned):
     from tipping_point.economics import CampaignFinancialsInput, CampaignTermsService
 
-    merchant_id, workshop_id = _make_workshop_owner("Terms Restrict")
+    merchant_id, workshop_id = _make_workshop_owner(owned, "Terms Restrict")
     with session_scope() as session:
         CampaignTermsService(session).create_draft(
             workshop_id,
@@ -148,8 +140,8 @@ def test_workshop_deletion_is_restricted_while_terms_exist(migrated_database):
             session.delete(session.get(Workshop, workshop_id))
 
 
-def test_campaign_terms_currency_constrained_to_gbp(migrated_database):
-    merchant_id, workshop_id = _make_workshop_owner("Currency Check")
+def test_campaign_terms_currency_constrained_to_gbp(owned):
+    merchant_id, workshop_id = _make_workshop_owner(owned, "Currency Check")
     with pytest.raises(IntegrityError):
         with session_scope() as session:
             session.add(
@@ -166,7 +158,7 @@ def test_campaign_terms_currency_constrained_to_gbp(migrated_database):
             )
 
 
-def test_transaction_rollback_on_failure(migrated_database):
+def test_transaction_rollback_on_failure(owned):
     merchant_id = uuid.uuid4()
     with pytest.raises(RuntimeError):
         with session_scope() as session:
@@ -181,22 +173,24 @@ def test_transaction_rollback_on_failure(migrated_database):
         )
 
 
-def test_unique_merchant_name(migrated_database):
+def test_unique_merchant_name(owned):
+    merchant_id = uuid.uuid4()
     with session_scope() as session:
-        session.add(Merchant(name="Unique Merchant"))
+        session.add(Merchant(id=merchant_id, name="Unique Merchant"))
+    owned.add(Merchant, merchant_id)
     with pytest.raises(IntegrityError):
         with session_scope() as session:
             session.add(Merchant(name="Unique Merchant"))
 
 
-def test_migration_head_is_single(migrated_database):
+def test_migration_head_is_single(owned):
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     heads = script.get_revisions(script.get_heads())
     assert len(heads) == 1
-    assert heads[0].revision == "0002_campaign_terms"
+    assert heads[0].revision == "0003_merchant_auth"
 
 
 def test_second_upgrade_head_is_harmless(migrated_database):

@@ -10,10 +10,12 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -198,4 +200,133 @@ class CampaignTerms(Base):
     __table_args__ = (
         UniqueConstraint("workshop_id", "version", name="uq_campaign_terms_workshop_version"),
         CheckConstraint("currency = 'GBP'", name="ck_campaign_terms_currency_gbp"),
+    )
+
+
+class MerchantCredential(Base):
+    """Login credentials for a merchant.
+
+    Only the password hash is stored. A merchant without a credential
+    row cannot log in. One credential per merchant.
+    """
+
+    __tablename__ = "merchant_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
+    )
+    merchant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("merchants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    login_identifier: Mapped[str] = mapped_column(String(100), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("merchant_id", name="uq_merchant_credentials_merchant"),
+        Index(
+            "uq_merchant_credentials_login_lower",
+            text("lower(login_identifier)"),
+            unique=True,
+        ),
+    )
+
+
+class MerchantSession(Base):
+    """A server-issued opaque merchant session.
+
+    Stores only SHA-256 hashes of the session token and the bound CSRF
+    token; the raw secrets exist only in the cookie/response.
+    """
+
+    __tablename__ = "merchant_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
+    )
+    merchant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("merchants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    csrf_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_merchant_sessions_token_hash"),
+        Index("ix_merchant_sessions_merchant_id", "merchant_id"),
+    )
+
+
+class Campaign(Base):
+    """A workshop campaign.
+
+    Created at publish time in this slice with status OPEN and an
+    authoritative reference to the frozen terms snapshot. One OPEN
+    campaign per workshop (partial unique index). The plan's full
+    campaign state machine is permitted by the status check constraint;
+    later gates perform the remaining transitions.
+    """
+
+    __tablename__ = "campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
+    )
+    workshop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workshops.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    terms_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("campaign_terms.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="OPEN")
+    capacity: Mapped[int] = mapped_column(Integer, nullable=False)
+    cutoff_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    terms_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    settlement_deadline: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("terms_id", name="uq_campaigns_terms"),
+        CheckConstraint(
+            "status IN ('DRAFT','OPEN','DECIDING','RELEASING','CANCELLED',"
+            "'SETTLING','CONFIRMED','ABORTING','COMPENSATING')",
+            name="ck_campaigns_status",
+        ),
+        CheckConstraint("capacity > 0", name="ck_campaigns_capacity_positive"),
+        Index(
+            "uq_campaigns_one_open_per_workshop",
+            "workshop_id",
+            unique=True,
+            postgresql_where=text("status = 'OPEN'"),
+        ),
     )

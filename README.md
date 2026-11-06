@@ -53,6 +53,29 @@ GET /health/live
 
 This endpoint requires no external services or credentials and can be used to verify the application is running.
 
+### Merchant Authentication & Workshop APIs
+
+All merchant routes derive identity exclusively from the server-side `tipping_session` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, host-only). State-changing requests require the `X-CSRF-Token` header and an allowed `Origin` (when the `Origin` header is present). All `/api/auth/*`, `/api/merchant/login`, `/api/merchant/logout`, and `/api/me` responses set `Cache-Control: no-store`.
+
+- `GET /api/auth/csrf` – Issue an anonymous CSRF bootstrap cookie (`tipping_csrf`) and token for pre-login double-submit.
+- `POST /api/merchant/login` – Authenticate (`login_identifier`, `password`), rotate any existing session, and issue a session-bound CSRF token.
+- `POST /api/merchant/logout` – Revoke the current session server-side and clear both cookies.
+- `GET /api/me` – Return the authenticated merchant and session expiration.
+- `POST /api/merchant/workshops` – Create a workshop and initial draft `CampaignTerms` (version 1).
+- `GET /api/merchant/workshops` – List workshops owned by the authenticated merchant.
+- `GET /api/merchant/workshops/{workshop_id}` – Retrieve an owned workshop (returns `404` for unknown or non-owned IDs).
+- `PATCH /api/merchant/workshops/{workshop_id}` – Update draft inputs and schedule while unpublished (`409` once published/frozen).
+- `POST /api/merchant/workshops/{workshop_id}/preview` – Pure viability calculation over the current draft inputs (no persistence or freeze).
+- `POST /api/merchant/workshops/{workshop_id}/publish` – Atomically lock the workshop, revalidate and freeze the draft `CampaignTerms` snapshot, verify costs are coverable at maximum capacity, and create (or idempotently return) the `OPEN` `Campaign`. Note: `OPEN` means published; guest booking and payment capability is not enabled in this slice.
+
+### Provisioning a Merchant Account (Local Operator Command)
+
+No default merchant credentials are ever seeded by migrations or tests. After migrating the target development database, provision a merchant interactively (reads password via hidden `getpass` input and stores only an Argon2id hash):
+
+```bash
+.venv/bin/python scripts/provision_merchant.py
+```
+
 ## Usage for Local Development
 
 ```bash

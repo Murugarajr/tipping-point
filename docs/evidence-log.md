@@ -162,3 +162,43 @@ both clean runs (included in the 56).
 - The dev database's pre-existing empty `alembic_version` table was
   left in place per instruction; the normal `upgrade head` populated it
   with `0002_campaign_terms` (no drop, no stamp, no recreate).
+
+## 4. Merchant Workflow Gate checkpoint (2026-11-06)
+
+### 4.1 Scope implemented and verified on `tipping_point_test`
+
+- **Migration `0003_merchant_auth`** (`Revises: 0002_campaign_terms`):
+  adds `merchant_credentials` (with `uq_merchant_credentials_merchant`
+  and case-insensitive unique index `uq_merchant_credentials_login_lower`),
+  `merchant_sessions` (with `uq_merchant_sessions_token_hash` and
+  `ix_merchant_sessions_merchant_id`), and `campaigns` (with
+  `uq_campaigns_terms`, status/capacity check constraints, and partial
+  unique index `uq_campaigns_one_open_per_workshop` on
+  `workshop_id WHERE status = 'OPEN'`).
+- **Merchant authentication & CSRF/Origin protection**:
+  Argon2id (`pwdlib[argon2]`) password hashing with dummy verification on
+  unknown login identifiers; opaque server-side sessions storing only
+  SHA-256 hashes of session and CSRF tokens; session rotation on login;
+  server-side revocation on logout; `Cache-Control: no-store` on all
+  auth/session responses (including 4xx error responses); bounded
+  per-process login throttling (`_MAX_THROTTLE_KEYS = 4096`) keyed on
+  normalized login identifier; startup validation refusing insecure
+  cookies in hosted mode or without explicit local dev opt-in.
+- **Authenticated workshop draft, preview, and publish APIs**:
+  strictly session-derived merchant ownership (`404` on cross-merchant
+  access, `422` on caller-supplied `merchant_id`), serialized row lock
+  (`SELECT ... FOR UPDATE`) on `Workshop` across both draft edits and
+  publishing, pure viability preview, and atomic publishing that blocks
+  infeasible-at-capacity or incomplete drafts, freezes the `CampaignTerms`
+  snapshot, and idempotently returns the single `OPEN` campaign.
+
+### 4.2 Executed verification commands and observed outputs
+
+| # | Command | Exit | Observed output / result |
+|---|---|---|---|
+| 1 | `.venv/bin/python -m pip check` | 0 | `No broken requirements found.` |
+| 2 | `.venv/bin/python -m alembic heads` | 0 | `0003_merchant_auth (head)` |
+| 3 | `.venv/bin/python -m pytest -q` (run 1) | 0 | `82 passed, 1 warning in 8.90s` |
+| 4 | `.venv/bin/python -m pytest -q` (run 2, consecutive) | 0 | `82 passed, 1 warning in 14.39s` |
+| 5 | `psql -h localhost -U tipping_point_app -d tipping_point_test` post-suite checks | 0 | `alembic_version = 0003_merchant_auth`; `merchants` contains only `b2bf3f0f-0255-4e64-9007-861c2a7c0f7e \| SENTINEL-2026-11-06-verification-preservation`; `workshops=0, terms=0, campaigns=0, creds=0, sessions=0` |
+| 6 | `psql -h localhost -U tipping_point_app -d tipping_point_dev` state check | 0 | `alembic_version = 0002_campaign_terms` (`merchants=0, workshops=0, terms=0`) — untouched pending explicit authorization to migrate `tipping_point_dev` to `0003_merchant_auth` |

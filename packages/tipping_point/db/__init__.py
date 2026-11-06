@@ -3,7 +3,15 @@
 from .config import DatabaseConfig
 from .engine import engine
 from .session import SessionLocal, session_scope
-from .models import Base, CampaignTerms, Merchant, Workshop
+from .models import (
+    Base,
+    Campaign,
+    CampaignTerms,
+    Merchant,
+    MerchantCredential,
+    MerchantSession,
+    Workshop,
+)
 
 __all__ = [
     "DatabaseConfig",
@@ -11,7 +19,10 @@ __all__ = [
     "SessionLocal",
     "session_scope",
     "Base",
+    "Campaign",
     "CampaignTerms",
     "Merchant",
+    "MerchantCredential",
+    "MerchantSession",
     "Workshop",
 ]

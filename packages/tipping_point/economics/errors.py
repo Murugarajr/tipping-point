@@ -21,3 +21,11 @@ class MissingAssumptionsError(CampaignTermsError):
 
 class InvalidCampaignDatesError(CampaignTermsError):
     """Campaign dates are absent, out of order, too long, or in the past."""
+
+
+class InfeasibleCampaignError(CampaignTermsError):
+    """Costs cannot be covered at maximum capacity; publishing is blocked."""
+
+
+class AlreadyPublishedError(CampaignTermsError):
+    """A campaign already exists; the approved cancellation path is required."""

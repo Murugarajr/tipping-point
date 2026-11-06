@@ -22,6 +22,14 @@ from .schemas import (
     MaterialLineInput,
 )
 from .service import CampaignTermsService
+from .publishing import (
+    WorkshopNotOwnedError,
+    publish_campaign,
+)
+from .errors import (
+    AlreadyPublishedError,
+    InfeasibleCampaignError,
+)
 
 __all__ = [
     "ALGORITHM_VERSION",
@@ -40,4 +48,8 @@ __all__ = [
     "FeeEstimateInput",
     "MaterialLineInput",
     "CampaignTermsService",
+    "WorkshopNotOwnedError",
+    "publish_campaign",
+    "AlreadyPublishedError",
+    "InfeasibleCampaignError",
 ]
