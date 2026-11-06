@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SESSION_COOKIE_NAME = "tipping_session"
@@ -39,13 +39,56 @@ class AppSettings(BaseSettings):
         ),
     )
     cookie_secure: bool = False
-    allow_insecure_dev_cookies: bool = True
+    allow_insecure_dev_cookies: bool = False
     allowed_origins: str = (
         "http://localhost:8000,http://localhost:5173,http://localhost:3000"
     )
     session_ttl_hours: int = 12
     throttle_max_failures: int = 5
     throttle_window_minutes: int = 15
+
+    channel3_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "CHANNEL3_API_KEY",
+            "TIPPING_POINT_CHANNEL3_API_KEY",
+            "channel3_api_key",
+        ),
+    )
+    channel3_base_url: str = Field(
+        default="https://api.trychannel3.com",
+        validation_alias=AliasChoices(
+            "CHANNEL3_BASE_URL",
+            "TIPPING_POINT_CHANNEL3_BASE_URL",
+            "channel3_base_url",
+        ),
+    )
+    channel3_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=30.0,
+        validation_alias=AliasChoices(
+            "CHANNEL3_TIMEOUT_SECONDS",
+            "TIPPING_POINT_CHANNEL3_TIMEOUT_SECONDS",
+            "channel3_timeout_seconds",
+        ),
+    )
+    channel3_offer_stale_after_seconds: int = Field(
+        default=3600,
+        ge=60,
+        validation_alias=AliasChoices(
+            "CHANNEL3_OFFER_STALE_AFTER_SECONDS",
+            "TIPPING_POINT_CHANNEL3_OFFER_STALE_AFTER_SECONDS",
+            "channel3_offer_stale_after_seconds",
+        ),
+    )
+
+    @property
+    def has_channel3_credentials(self) -> bool:
+        """Whether a non-empty Channel3 API key is configured server-side."""
+        if self.channel3_api_key is None:
+            return False
+        return bool(self.channel3_api_key.get_secret_value().strip())
 
     @property
     def origins(self) -> frozenset[str]:

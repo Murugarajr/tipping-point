@@ -1,0 +1,41 @@
+"""Channel3 product search integration for workshop material discovery."""
+
+from .client import (
+    CHANNEL3_COUNTRY,
+    CHANNEL3_CURRENCY,
+    CHANNEL3_LANGUAGE,
+    CHANNEL3_MAX_LIMIT,
+    CHANNEL3_MAX_QUERY_LENGTH,
+    Channel3AuthError,
+    Channel3Client,
+    Channel3Error,
+    Channel3RateLimitError,
+    Channel3ResponseError,
+    Channel3SearchResult,
+    Channel3TimeoutError,
+    Channel3UnavailableError,
+    Channel3UnconfiguredError,
+    NormalizedOfferCandidate,
+    normalize_search_payload,
+    parse_major_to_pence,
+)
+
+__all__ = [
+    "CHANNEL3_COUNTRY",
+    "CHANNEL3_CURRENCY",
+    "CHANNEL3_LANGUAGE",
+    "CHANNEL3_MAX_LIMIT",
+    "CHANNEL3_MAX_QUERY_LENGTH",
+    "Channel3AuthError",
+    "Channel3Client",
+    "Channel3Error",
+    "Channel3RateLimitError",
+    "Channel3ResponseError",
+    "Channel3SearchResult",
+    "Channel3TimeoutError",
+    "Channel3UnavailableError",
+    "Channel3UnconfiguredError",
+    "NormalizedOfferCandidate",
+    "normalize_search_payload",
+    "parse_major_to_pence",
+]

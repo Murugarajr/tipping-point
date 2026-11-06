@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import uuid
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..db.models import CampaignTerms, Workshop
+from ..db.models import CampaignTerms, MaterialOfferSnapshot, Workshop
 from .calculator import (
     ALGORITHM_VERSION,
     COSTING_POLICY,
@@ -24,6 +26,7 @@ from .calculator import (
 from .errors import (
     InvalidCampaignDatesError,
     MissingAssumptionsError,
+    StaleMaterialOfferError,
     TermsFrozenError,
     ZeroTicketPriceError,
 )
@@ -35,20 +38,66 @@ def _now() -> datetime:
 
 
 def _assumption_labels(inputs: CampaignFinancialsInput) -> dict:
-    """Provenance labels for every input this slice records."""
+    """Provenance labels for every input recorded in the snapshot."""
+    has_channel3 = any(m.offer_provenance is not None for m in inputs.materials)
+    material_provenance = {
+        material.name: (
+            {
+                "source_label": material.source_label,
+                "offer_snapshot_id": material.offer_provenance.offer_snapshot_id,
+                "provider": material.offer_provenance.provider,
+                "provider_product_id": material.offer_provenance.provider_product_id,
+                "provider_offer_ref": material.offer_provenance.provider_offer_ref,
+                "product_title": material.offer_provenance.product_title,
+                "brand_name": material.offer_provenance.brand_name,
+                "merchant_domain": material.offer_provenance.merchant_domain,
+                "reported_price_raw": material.offer_provenance.reported_price_raw,
+                "price_minor": material.offer_provenance.price_minor,
+                "currency": material.offer_provenance.currency,
+                "product_url": material.offer_provenance.product_url,
+                "image_url": material.offer_provenance.image_url,
+                "availability": material.offer_provenance.availability,
+                "condition": material.offer_provenance.condition,
+                "locale_country": material.offer_provenance.locale_country,
+                "locale_language": material.offer_provenance.locale_language,
+                "locale_currency": material.offer_provenance.locale_currency,
+                "retrieved_at": material.offer_provenance.retrieved_at.isoformat(),
+                "suitability_reviewed": material.offer_provenance.suitability_reviewed,
+                "pack_size_reviewed": material.offer_provenance.pack_size_reviewed,
+                "review_notes": material.offer_provenance.review_notes,
+                "reviewed_pack_assumptions": {
+                    "pack_size": material.pack_size,
+                    "shared_units": material.shared_units,
+                    "per_attendee_units": material.per_attendee_units,
+                    "kind": material.kind,
+                },
+            }
+            if material.offer_provenance is not None
+            else {"source_label": material.source_label, "provider": None}
+        )
+        for material in inputs.materials
+    }
+    note = (
+        "contains Channel3 offer snapshot provenance paired with merchant-reviewed "
+        "pack, usage, and shipping assumptions; search results are not stock "
+        "reservations or guaranteed delivered costs"
+        if has_channel3
+        else (
+            "material inputs are merchant-entered/test assumptions in this "
+            "slice; they are not Channel3 data and no live supplier prices "
+            "were fetched"
+        )
+    )
     return {
         "materials": {
             material.name: material.source_label for material in inputs.materials
         },
+        "material_provenance": material_provenance,
         "fee_estimate": inputs.fee_estimate.label if inputs.fee_estimate else None,
-        "shipping_allowance": "merchant-entered",
+        "shipping_allowance": inputs.shipping_allowance_source,
         "contingency": "merchant-entered",
         "costing_policy": COSTING_POLICY,
-        "note": (
-            "material inputs are merchant-entered/test assumptions in this "
-            "slice; they are not Channel3 data and no live supplier prices "
-            "were fetched"
-        ),
+        "note": note,
     }
 
 
@@ -156,7 +205,12 @@ class CampaignTermsService:
         self._session.flush()
         return row
 
-    def freeze(self, terms_id) -> CampaignTerms:
+    def freeze(
+        self,
+        terms_id,
+        *,
+        stale_after_seconds: int | None = None,
+    ) -> CampaignTerms:
         """Validate publishable terms and freeze them immutably."""
         row = self._session.get(CampaignTerms, terms_id)
         if row is None:
@@ -182,11 +236,54 @@ class CampaignTermsService:
                 "publishable terms require campaign open and close dates"
             )
 
+        now = _now()
+        for material in inputs.materials:
+            prov = material.offer_provenance
+            if prov is None:
+                continue
+            if not prov.suitability_reviewed or not prov.pack_size_reviewed:
+                raise MissingAssumptionsError(
+                    f"material {material.name!r} requires explicit suitability "
+                    "and pack-size review before publication"
+                )
+            try:
+                snap_id = uuid.UUID(prov.offer_snapshot_id)
+            except ValueError as exc:
+                raise MissingAssumptionsError(
+                    f"material {material.name!r} has an invalid offer_snapshot_id"
+                ) from exc
+            snapshot = self._session.get(MaterialOfferSnapshot, snap_id)
+            if snapshot is None or snapshot.workshop_id != row.workshop_id:
+                raise MissingAssumptionsError(
+                    f"material {material.name!r} references an offer snapshot "
+                    "that does not belong to this workshop"
+                )
+            if (
+                snapshot.price_minor != prov.price_minor
+                or snapshot.price_minor != material.pack_price_minor
+                or snapshot.currency != prov.currency
+                or snapshot.merchant_domain != prov.merchant_domain
+                or snapshot.product_title != prov.product_title
+            ):
+                raise MissingAssumptionsError(
+                    f"material {material.name!r} provenance does not match the "
+                    "immutable server offer snapshot"
+                )
+            if stale_after_seconds is not None:
+                age_seconds = (now - snapshot.retrieved_at).total_seconds()
+                if age_seconds > stale_after_seconds:
+                    raise StaleMaterialOfferError(
+                        f"selected Channel3 offer for material {material.name!r} "
+                        f"was retrieved {int(age_seconds)}s ago (stale threshold "
+                        f"{stale_after_seconds}s); perform an explicit reviewed "
+                        "replacement before publication"
+                    )
+
         schedule = CampaignScheduleInput(
             opens_at=row.opens_at,
             closes_at=row.closes_at,
         )
-        if row.closes_at <= _now():
+        if row.closes_at <= now:
             raise InvalidCampaignDatesError(
                 "campaign close must be in the future when terms are frozen"
             )

@@ -27,5 +27,9 @@ class InfeasibleCampaignError(CampaignTermsError):
     """Costs cannot be covered at maximum capacity; publishing is blocked."""
 
 
+class StaleMaterialOfferError(CampaignTermsError):
+    """A selected Channel3 offer snapshot requires explicit reviewed replacement."""
+
+
 class AlreadyPublishedError(CampaignTermsError):
     """A campaign already exists; the approved cancellation path is required."""

@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .api import auth_routes, workshop_routes
+from .api import auth_routes, material_routes, workshop_routes
 from .settings import AppSettings
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -72,6 +72,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app.include_router(auth_routes.router)
     app.include_router(workshop_routes.router)
+    app.include_router(material_routes.router)
 
     @app.get("/health/live")
     async def health_live():

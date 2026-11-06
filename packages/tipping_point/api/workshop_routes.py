@@ -9,6 +9,7 @@ authoritative transaction defined in ``economics.publishing``.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -21,12 +22,26 @@ from ..auth.dependencies import (
     get_db,
     require_csrf,
 )
-from ..db.models import Campaign, CampaignTerms, Workshop
+from ..channel3 import (
+    Channel3AuthError,
+    Channel3Client,
+    Channel3Error,
+    Channel3RateLimitError,
+    Channel3ResponseError,
+    Channel3TimeoutError,
+    Channel3UnavailableError,
+    Channel3UnconfiguredError,
+)
+from ..db.models import Campaign, CampaignTerms, MaterialOfferSnapshot, Workshop
+from ..db.session import SessionLocal
 from ..economics import (
     AlreadyPublishedError,
+    CampaignFinancialsInput,
     CampaignTermsError,
     CampaignTermsService,
     InfeasibleCampaignError,
+    MaterialLineInput,
+    MaterialOfferProvenanceInput,
     WorkshopNotOwnedError,
     calculate_viability,
     publish_campaign,
@@ -34,6 +49,12 @@ from ..economics import (
 from .schemas import (
     AttendancePointOut,
     CampaignOut,
+    MaterialOfferSearchRequest,
+    MaterialOfferSearchResponseOut,
+    MaterialOfferSelectionOut,
+    MaterialOfferSelectionRequest,
+    MaterialOfferSnapshotOut,
+    RejectedOfferCandidateOut,
     ViabilityPreviewOut,
     WorkshopCreateRequest,
     WorkshopEditRequest,
@@ -206,6 +227,13 @@ def preview_workshop(
 
     inputs = CampaignFinancialsInput.model_validate(terms.financial_inputs)
     report = calculate_viability(inputs)
+    materials_note = (
+        "Channel3 offer snapshots are provider facts paired with merchant-reviewed "
+        "pack, usage, suitability, and shipping assumptions; no stock, delivered-cost, "
+        "quantity, or shipping-time guarantee is implied."
+        if any(material.offer_provenance is not None for material in inputs.materials)
+        else "Materials are merchant-entered assumptions, not Channel3 data; no Channel3 offer is selected."
+    )
     return ViabilityPreviewOut(
         algorithm_version=report.algorithm_version,
         currency=report.currency,
@@ -229,6 +257,7 @@ def preview_workshop(
             )
             for p in report.attendance_curve
         ],
+        materials_note=materials_note,
     )
 
 
@@ -252,6 +281,7 @@ def publish_workshop(
             db,
             merchant=auth.merchant,
             workshop_id=workshop_id,
+            stale_after_seconds=request.app.state.settings.channel3_offer_stale_after_seconds,
         )
     except WorkshopNotOwnedError:
         raise HTTPException(status_code=404, detail="workshop not found") from None

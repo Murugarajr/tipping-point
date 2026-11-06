@@ -68,6 +68,18 @@ All merchant routes derive identity exclusively from the server-side `tipping_se
 - `POST /api/merchant/workshops/{workshop_id}/preview` – Pure viability calculation over the current draft inputs (no persistence or freeze).
 - `POST /api/merchant/workshops/{workshop_id}/publish` – Atomically lock the workshop, revalidate and freeze the draft `CampaignTerms` snapshot, verify costs are coverable at maximum capacity, and create (or idempotently return) the `OPEN` `Campaign`. Note: `OPEN` means published; guest booking and payment capability is not enabled in this slice.
 
+
+
+### Channel3 Material Costing
+
+`CHANNEL3_API_KEY` is optional server-side configuration. The backend uses the documented Channel3 REST API through the existing `httpx` dependency; the key is never returned to clients. Search requires an authenticated session, session-bound CSRF token, an allowed Origin, and an owned unpublished workshop. Search uses `POST https://api.trychannel3.com/v1/search` with explicit `config.country=GB`, `config.language=en`, and `config.currency=GBP`.
+
+- `POST /api/merchant/workshops/{workshop_id}/materials/search` accepts a bounded text query and result limit. It stores eligible results as immutable offer snapshots scoped to the merchant and workshop. Invalid/missing prices and non-GBP offers are excluded from costing and reported as rejected. Missing configuration returns `503` with `state=unconfigured`; provider outages/rate limits are reported distinctly.
+- `POST /api/merchant/workshops/{workshop_id}/materials/select` accepts only an internal `offer_snapshot_id` plus merchant-reviewed assumptions: product suitability, pack size, shared units, units per attendee, and a shipping allowance in pence with its source. Provider price, currency, merchant, and provenance are always read from the server snapshot. Stale snapshots require a fresh search and explicit review.
+- The selected price and reviewed pack/usage assumptions are stored in the campaign financial inputs and passed into the existing deterministic viability calculator. Shipping is a campaign-level allowance counted once. Publication freezes the provider snapshot ID, provider facts, original retrieval timestamp, reviewed assumptions, shipping source, and exact financial inputs; no price refresh occurs at publish time.
+
+Channel3 results are not stock reservations, delivered-cost guarantees, verified pack quantities, or shipping-time promises. Check `GET /api/merchant/workshops/{workshop_id}` / preview; published OPEN campaigns mean published only, not booked or paid. For local HTTP development explicitly set `TIPPING_POINT_ENV=local` and `TIPPING_POINT_ALLOW_INSECURE_DEV_COOKIES=true`; the default is now secure-by-configuration (startup rejects insecure cookies until opted in). See [Channel3 API reference](https://docs.trychannel3.com/api-reference/v1/search.md), [localization](https://docs.trychannel3.com/guides/localization.md), [response fields](https://docs.trychannel3.com/guides/response-overview.md), [offer fields](https://docs.trychannel3.com/guides/offer.md), and [rate limits](https://docs.trychannel3.com/faq/rate-limits.md).
+
 ### Provisioning a Merchant Account (Local Operator Command)
 
 No default merchant credentials are ever seeded by migrations or tests. After migrating the target development database, provision a merchant interactively (reads password via hidden `getpass` input and stores only an Argon2id hash):

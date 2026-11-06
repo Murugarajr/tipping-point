@@ -330,3 +330,86 @@ class Campaign(Base):
             postgresql_where=text("status = 'OPEN'"),
         ),
     )
+
+
+class MaterialOfferSnapshot(Base):
+    """Immutable server-stored Channel3 offer provenance snapshot.
+
+    Created when a merchant searches material offers for an owned
+    workshop. Never overwritten in place once persisted, so price
+    snapshots referenced by draft or frozen workshop terms retain their
+    original provider facts and retrieval timestamp.
+    """
+
+    __tablename__ = "material_offer_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=_generate_uuid
+    )
+    merchant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("merchants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    workshop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workshops.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="channel3"
+    )
+    search_query: Mapped[str] = mapped_column(String(200), nullable=False)
+    provider_product_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    provider_offer_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    product_title: Mapped[str] = mapped_column(String(500), nullable=False)
+    brand_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    merchant_domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    reported_price_raw: Mapped[str] = mapped_column(String(64), nullable=False)
+    price_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="GBP"
+    )
+    product_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    availability: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    condition: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    locale_country: Mapped[str] = mapped_column(
+        String(5), nullable=False, default="GB"
+    )
+    locale_language: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="en"
+    )
+    locale_currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="GBP"
+    )
+    retrieved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "price_minor > 0", name="ck_material_offer_snapshots_price_positive"
+        ),
+        CheckConstraint(
+            "currency = 'GBP'", name="ck_material_offer_snapshots_currency_gbp"
+        ),
+        CheckConstraint(
+            "locale_country = 'GB' AND locale_language = 'en' AND locale_currency = 'GBP'",
+            name="ck_material_offer_snapshots_locale_gb",
+        ),
+        Index(
+            "ix_material_offer_snapshots_workshop_retrieved",
+            "workshop_id",
+            "retrieved_at",
+        ),
+        Index(
+            "ix_material_offer_snapshots_merchant_id",
+            "merchant_id",
+        ),
+    )

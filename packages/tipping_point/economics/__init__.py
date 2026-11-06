@@ -8,9 +8,12 @@ from .calculator import (
     calculate_viability,
 )
 from .errors import (
+    AlreadyPublishedError,
     CampaignTermsError,
+    InfeasibleCampaignError,
     InvalidCampaignDatesError,
     MissingAssumptionsError,
+    StaleMaterialOfferError,
     TermsFrozenError,
     ZeroTicketPriceError,
 )
@@ -20,15 +23,12 @@ from .schemas import (
     CampaignScheduleInput,
     FeeEstimateInput,
     MaterialLineInput,
+    MaterialOfferProvenanceInput,
 )
 from .service import CampaignTermsService
 from .publishing import (
     WorkshopNotOwnedError,
     publish_campaign,
-)
-from .errors import (
-    AlreadyPublishedError,
-    InfeasibleCampaignError,
 )
 
 __all__ = [
@@ -40,6 +40,7 @@ __all__ = [
     "CampaignTermsError",
     "InvalidCampaignDatesError",
     "MissingAssumptionsError",
+    "StaleMaterialOfferError",
     "TermsFrozenError",
     "ZeroTicketPriceError",
     "CAMPAIGN_MAX_DURATION_HOURS",
@@ -47,6 +48,7 @@ __all__ = [
     "CampaignScheduleInput",
     "FeeEstimateInput",
     "MaterialLineInput",
+    "MaterialOfferProvenanceInput",
     "CampaignTermsService",
     "WorkshopNotOwnedError",
     "publish_campaign",

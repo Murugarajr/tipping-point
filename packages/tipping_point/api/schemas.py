@@ -4,12 +4,27 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..economics import (
     CampaignFinancialsInput,
     CampaignScheduleInput,
 )
+
+
+class MerchantFinancialsInput(CampaignFinancialsInput):
+    """Merchant-supplied terms with no client-controlled offer provenance."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_client_offer_provenance(cls, value):
+        if isinstance(value, dict):
+            for material in value.get("materials", []):
+                if isinstance(material, dict) and "offer_provenance" in material:
+                    raise ValueError(
+                        "offer provenance must be selected from a server-stored offer ID"
+                    )
+        return value
 
 
 class LoginRequest(BaseModel):
@@ -44,7 +59,7 @@ class WorkshopCreateRequest(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
-    financials: CampaignFinancialsInput
+    financials: MerchantFinancialsInput
     schedule: CampaignScheduleInput
 
 
@@ -53,7 +68,7 @@ class WorkshopEditRequest(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
-    financials: CampaignFinancialsInput
+    financials: MerchantFinancialsInput
     schedule: CampaignScheduleInput
 
 
@@ -109,3 +124,108 @@ class CampaignOut(BaseModel):
     terms_version: int
     terms_id: str
     terms_snapshot_hash: str
+
+
+class MaterialOfferSearchRequest(BaseModel):
+    """Bounded Channel3 product search request for a workshop draft."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=200)
+    limit: int = Field(default=10, ge=1, le=20)
+    in_stock_only: bool = True
+
+
+class MaterialOfferSnapshotOut(BaseModel):
+    """Server-persisted Channel3 offer provenance snapshot."""
+
+    offer_snapshot_id: str
+    workshop_id: str
+    provider: str
+    search_query: str
+    provider_product_id: str | None
+    provider_offer_ref: str
+    product_title: str
+    brand_name: str | None
+    merchant_domain: str
+    reported_price_raw: str
+    price_minor: int
+    currency: str
+    product_url: str | None
+    image_url: str | None
+    availability: str | None
+    condition: str | None
+    locale_country: str
+    locale_language: str
+    locale_currency: str
+    retrieved_at: datetime
+    is_stale: bool
+    freshness_label: str
+    limitations_note: str = (
+        "Channel3 search results are not stock reservations, guaranteed "
+        "delivered prices, verified pack quantities, or shipping-time guarantees."
+    )
+
+
+class RejectedOfferCandidateOut(BaseModel):
+    """Provider offer rejected for automatic costing (e.g. non-GBP or invalid price)."""
+
+    provider_product_id: str | None
+    provider_offer_ref: str
+    product_title: str
+    merchant_domain: str
+    reported_price_raw: str | None
+    currency: str | None
+    ineligible_reason: str
+
+
+class MaterialOfferSearchResponseOut(BaseModel):
+    """Search response separating fresh/persisted offers from rejected candidates."""
+
+    workshop_id: str
+    query: str
+    locale_country: str
+    locale_language: str
+    locale_currency: str
+    retrieved_at: datetime
+    offers: list[MaterialOfferSnapshotOut]
+    rejected_offers: list[RejectedOfferCandidateOut]
+    eligible_count: int
+    rejected_count: int
+
+
+class MaterialOfferSelectionRequest(BaseModel):
+    """Select a server-stored offer snapshot and record reviewed assumptions.
+
+    Forbids caller-supplied ``price_minor``, ``pack_price_minor``,
+    ``merchant_domain``, ``currency``, or raw provider provenance fields.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    offer_snapshot_id: str = Field(min_length=1, max_length=64)
+    material_name: str = Field(min_length=1, max_length=200)
+    kind: str = Field(default="consumable", pattern="^(consumable|reusable)$")
+    pack_size: int = Field(ge=1)
+    shared_units: int = Field(ge=0)
+    per_attendee_units: int = Field(ge=0)
+    suitability_reviewed: bool
+    pack_size_reviewed: bool
+    review_notes: str | None = Field(default=None, max_length=500)
+    shipping_allowance_minor: int = Field(ge=0)
+    shipping_allowance_source: str = Field(min_length=1, max_length=120)
+
+
+class MaterialOfferSelectionOut(BaseModel):
+    """Result of selecting a Channel3 offer snapshot into the draft."""
+
+    workshop: WorkshopOut
+    selected_offer: MaterialOfferSnapshotOut
+    material_line_name: str
+    pack_price_minor: int
+    pack_size: int
+    shared_units: int
+    per_attendee_units: int
+    shipping_allowance_minor: int
+    shipping_allowance_source: str
+    viability_preview: ViabilityPreviewOut

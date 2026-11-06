@@ -53,6 +53,7 @@ def publish_campaign(
     *,
     merchant: Merchant,
     workshop_id,
+    stale_after_seconds: int | None = None,
 ) -> tuple[Campaign, bool]:
     """Freeze the current draft terms and publish the campaign.
 
@@ -102,7 +103,9 @@ def publish_campaign(
     # Revalidation happens inside freeze(): positive ticket price,
     # explicit fee estimate, valid and future campaign dates within the
     # approved maximum duration, and a reproducible snapshot hash.
-    CampaignTermsService(session).freeze(terms.id)
+    CampaignTermsService(session).freeze(
+        terms.id, stale_after_seconds=stale_after_seconds
+    )
 
     # Plan rule: block publishing when costs cannot be covered at
     # maximum capacity. Reaching the first viable attendance does not

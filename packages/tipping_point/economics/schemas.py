@@ -38,12 +38,42 @@ class FeeEstimateInput(BaseModel):
     )
 
 
+class MaterialOfferProvenanceInput(BaseModel):
+    """Server-bound Channel3 offer provenance and reviewed pack assumptions."""
+
+    model_config = {"extra": "forbid"}
+
+    offer_snapshot_id: str = Field(min_length=1, max_length=64)
+    provider: Literal["channel3"] = "channel3"
+    provider_product_id: str | None = Field(default=None, max_length=200)
+    provider_offer_ref: str = Field(min_length=1, max_length=255)
+    product_title: str = Field(min_length=1, max_length=500)
+    brand_name: str | None = Field(default=None, max_length=200)
+    merchant_domain: str = Field(min_length=1, max_length=255)
+    reported_price_raw: str = Field(min_length=1, max_length=64)
+    price_minor: int = Field(ge=1)
+    currency: Currency = "GBP"
+    product_url: str | None = Field(default=None, max_length=2000)
+    image_url: str | None = Field(default=None, max_length=2000)
+    availability: str | None = Field(default=None, max_length=50)
+    condition: str | None = Field(default=None, max_length=50)
+    locale_country: Literal["GB"] = "GB"
+    locale_language: Literal["en"] = "en"
+    locale_currency: Currency = "GBP"
+    retrieved_at: datetime
+    suitability_reviewed: bool = True
+    pack_size_reviewed: bool = True
+    review_notes: str | None = Field(default=None, max_length=500)
+
+
 class MaterialLineInput(BaseModel):
     """One material line with explicit provenance.
 
     Consumable lines are budgeted via whole packs. Reusable equipment is
     recorded as an assumption but is not budgeted (see COSTING_POLICY).
     """
+
+    model_config = {"extra": "forbid"}
 
     name: str = Field(min_length=1, max_length=200)
     source_label: str = Field(min_length=1, max_length=100)
@@ -52,6 +82,7 @@ class MaterialLineInput(BaseModel):
     per_attendee_units: int = Field(ge=0)
     pack_size: int = Field(ge=1)
     pack_price_minor: int = Field(ge=0)
+    offer_provenance: MaterialOfferProvenanceInput | None = None
 
     @model_validator(mode="after")
     def _require_units_for_consumables(self) -> "MaterialLineInput":
@@ -59,6 +90,11 @@ class MaterialLineInput(BaseModel):
             raise ValueError(
                 f"consumable material {self.name!r} requires shared or per-attendee units"
             )
+        if self.offer_provenance is not None:
+            if self.pack_price_minor != self.offer_provenance.price_minor:
+                raise ValueError(
+                    "material line pack_price_minor must equal the selected offer snapshot price_minor"
+                )
         return self
 
 
@@ -79,6 +115,11 @@ class CampaignFinancialsInput(BaseModel):
     fixed_costs_minor: int = Field(default=0, ge=0)
     materials: list[MaterialLineInput] = Field(default_factory=list)
     shipping_allowance_minor: int = Field(default=0, ge=0)
+    shipping_allowance_source: str = Field(
+        default="merchant-entered",
+        min_length=1,
+        max_length=120,
+    )
     contingency_minor: int = Field(default=0, ge=0)
     fee_estimate: FeeEstimateInput | None = None
 

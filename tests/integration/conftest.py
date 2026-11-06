@@ -64,6 +64,7 @@ class _OwnedRecords:
         self.campaigns: set = set()
         self.credentials: set = set()
         self.sessions: set = set()
+        self.offer_snapshots: set = set()
 
     def add(self, model, row_id) -> None:
         """Register a record (or an owned root) created by this test."""
@@ -80,6 +81,8 @@ class _OwnedRecords:
             self.credentials.add(row_id)
         elif name == "MerchantSession":
             self.sessions.add(row_id)
+        elif name == "MaterialOfferSnapshot":
+            self.offer_snapshots.add(row_id)
         else:  # pragma: no cover - guards against silent misregistration
             raise TypeError(f"unsupported model for registration: {name}")
 
@@ -97,6 +100,7 @@ def owned(migrated_database) -> _OwnedRecords:
     from tipping_point.db.models import (
         Campaign,
         CampaignTerms,
+        MaterialOfferSnapshot,
         Merchant,
         MerchantCredential,
         MerchantSession,
@@ -140,6 +144,15 @@ def owned(migrated_database) -> _OwnedRecords:
             session.execute(
                 delete(MerchantCredential).where(
                     MerchantCredential.id.in_(registry.credentials)
+                )
+            )
+            session.flush()
+        snapshot_ids = set(registry.offer_snapshots)
+        if snapshot_ids or workshop_ids:
+            session.execute(
+                delete(MaterialOfferSnapshot).where(
+                    (MaterialOfferSnapshot.id.in_(snapshot_ids))
+                    | (MaterialOfferSnapshot.workshop_id.in_(workshop_ids))
                 )
             )
             session.flush()

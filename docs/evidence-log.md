@@ -53,13 +53,15 @@ reverted. No further role, password, `pg_hba`, or service changes have
 been made. Revert command if ever separately approved:
 `ALTER ROLE tipping_point_app NOLOGIN`.
 
-## 3. Fresh verified evidence (2026-11-06 checkpoint)
+## 3. Historical verification record (2026-11-06; not re-verified here)
 
-Every entry below was executed during the verification/test-safety
-checkpoint through the repository-root `.venv`, with the observed
-result recorded verbatim. The known Starlette deprecation warning
-(starlette 1.10.0, `testclient.py:40`, httpx fallback) appears in each
-full-suite run; it is recorded, not suppressed.
+The entries in this section are carried-forward claims from an earlier
+checkpoint. Their referenced command logs were not available in the
+resumed checkpoint, so this section is not independent evidence for
+those results and must not be treated as current verification. Current
+observations and commands from the resumed checkpoint are recorded in
+section 7. Direct database observations there supersede any conflicting
+revision or row-count statement below.
 
 ### 3.1 Test teardown change (before any suite re-run)
 
@@ -118,6 +120,8 @@ Observed unchanged (all fields byte-identical) after two complete
 | 10 | Dev pre-migration checks (SQL) | 0 | Only table: empty `alembic_version` (0 rows); no application tables; no conflicting schema — matched the report, so the approved upgrade proceeded |
 | 11 | `.venv/bin/python -m alembic upgrade head` (dev) | 0 | Applied 0001 then 0002 to `tipping_point_dev` |
 | 12 | Dev post-migration SQL verification | 0 | Revision `0002_campaign_terms`; tables `alembic_version, campaign_terms, merchants, workshops`; `workshops_merchant_id_fkey ... ON DELETE RESTRICT`; `campaign_terms_workshop_id_fkey ... ON DELETE RESTRICT`; checks `ck_campaign_terms_currency_gbp`, `ck_workshop_capacity_positive`, `ck_workshop_ticket_price_non_negative`; uniques `uq_merchant_name`, `uq_campaign_terms_workshop_version` |
+
+**Historical scope note:** these rows record claims from the earlier verification checkpoint and are not evidence for the resumed material-costing checkpoint. In particular, statements later in this section about the development database remaining at revision `0002_campaign_terms` are superseded by the direct resumed-checkpoint observation: `tipping_point_dev` is currently at `0003_merchant_auth`.
 
 The suite's offline-credentials proof
 (`tests/test_isolation.py::test_offline_smoke_tests_need_no_database_credentials`,
@@ -201,4 +205,139 @@ both clean runs (included in the 56).
 | 3 | `.venv/bin/python -m pytest -q` (run 1) | 0 | `82 passed, 1 warning in 8.90s` |
 | 4 | `.venv/bin/python -m pytest -q` (run 2, consecutive) | 0 | `82 passed, 1 warning in 14.39s` |
 | 5 | `psql -h localhost -U tipping_point_app -d tipping_point_test` post-suite checks | 0 | `alembic_version = 0003_merchant_auth`; `merchants` contains only `b2bf3f0f-0255-4e64-9007-861c2a7c0f7e \| SENTINEL-2026-11-06-verification-preservation`; `workshops=0, terms=0, campaigns=0, creds=0, sessions=0` |
-| 6 | `psql -h localhost -U tipping_point_app -d tipping_point_dev` state check | 0 | `alembic_version = 0002_campaign_terms` (`merchants=0, workshops=0, terms=0`) — untouched pending explicit authorization to migrate `tipping_point_dev` to `0003_merchant_auth` |
+
+
+## 5. Channel3 material-costing checkpoint (2026-11-06)
+
+### 5.1 Development migration `0003_merchant_auth`
+
+Pre-upgrade checks, executed through `/Users/ohm/Documents/projects/sbox/tipping-point/.venv/bin/python`:
+
+- Repository root: `/Users/ohm/Documents/projects/sbox/tipping-point`; `.venv/bin/python` was confirmed as the active interpreter (`sys.prefix` resolves to the repository `.venv`).
+- `scripts/verify_db_identity.py`: `connection: OK`, `current_database: tipping_point_dev`, `session_user: tipping_point_app`, `current_user: tipping_point_app`; role was `LOGIN=True SUPERUSER=False CREATEDB=False CREATEROLE=False`.
+- Direct `psql` state: `tipping_point_dev`, both role values `tipping_point_app`; revision `0002_campaign_terms`; `merchants=0, workshops=0, campaign_terms=0`.
+- `alembic history`: `0002_campaign_terms -> 0003_merchant_auth (head)`; migration down-revision is `0002_campaign_terms`.
+
+Executed exactly `.venv/bin/python -m alembic upgrade 0003_merchant_auth`. Observed revision `0003_merchant_auth`. It added `merchant_credentials`, `merchant_sessions`, and `campaigns`; confirmed restrictive foreign keys, lower-case login/session token unique indexes, campaign unique constraints/status and capacity checks, and partial unique OPEN campaign index. Existing core row counts remained zero; new tables were empty. No credential was provisioned. An initial catalog query had an `ORDER BY table_name` alias error; corrected constraint/index queries completed successfully. No stamp, downgrade, reset, or role changes were used.
+
+### 5.2 Channel3 contract references and implementation mapping
+
+The prior checkpoint recorded these official documentation references. They
+were not independently fetched or re-verified during the resumed checkpoint;
+contract assertions based on them remain historical claims:
+
+- Search API/OpenAPI: https://docs.trychannel3.com/api-reference/v1/search.md and https://docs.trychannel3.com/openapi/openapi.json
+- Search: https://docs.trychannel3.com/guides/search.md
+- Locale: https://docs.trychannel3.com/guides/localization.md
+- Search response: https://docs.trychannel3.com/guides/response-overview.md
+- Offer: https://docs.trychannel3.com/guides/offer.md
+- Rate limits: https://docs.trychannel3.com/faq/rate-limits.md
+
+
+### 5.3 Additive persistence and merchant workflow
+
+The migration file and implementation were inspected in the resumed checkpoint.
+The previously recorded chronology and command claim that `0004_material_costing`
+was applied to `tipping_point_test` are historical and unverified here. Current
+revision observations are recorded in section 7. Source inspection shows the
+migration creates `material_offer_snapshots` with provider provenance columns,
+positive-price/GBP/GB-en/GBP checks, restrictive FKs, a PK, and indexes by
+merchant and workshop/retrieval timestamp.
+- Snapshots are immutable per merchant/workshop. Search and selection endpoints require merchant session, CSRF and Origin validation, owned unpublished drafts, and row locking only for database checks/writes. Channel3 requests happen outside the transaction/row lock. Selection takes an internal offer ID and merchant review assumptions; price/currency/merchant/provenance come from the server snapshot, not client fields. Published terms reject search/selection.
+- Selected snapshot price and reviewed pack assumptions pass through the existing calculator; shipping requires an explicit merchant amount and source and is counted once. Publication verifies snapshot ownership/value, review flags, and freshness (default one hour) and freezes provenance/retrieval timestamp, assumptions, shipping source, and exact financial inputs. No refresh at publish.
+- Registered cleanup is extended to `MaterialOfferSnapshot`; deletes remain restricted to registered IDs or owned workshop IDs.
+
+### 5.4 Automated verification (prior claims pending re-verification)
+
+Provider tests are intended to use explicitly labeled fixture data with `httpx.MockTransport`; they must not make live requests. The prior version of this log claimed `115 passed` plus other specific checks, but the command output supporting those claims is not available in the resumed checkpoint. Treat those results as **unverified historical claims**, not as current test evidence. Current execution evidence is recorded in the resumed-checkpoint section below.
+
+### 5.5 Live Channel3 request accounting and merchant assumptions
+
+The previous version of this log contained mutually contradictory assertions: a two-request live result with specific offer counts/timing, and a claim that zero live requests occurred. Those provider outcomes and details are withdrawn as **unverified**; they must not be used as evidence of current coverage or selected offers.
+
+The handoff context for this resumed checkpoint states that three read-only live-search commands were submitted with `max_attempts=1`, but actual execution and outcomes are unknown. Conservatively account for all three against the five-request allowance. No further live requests were made in this checkpoint; two remain at most, subject to reconciliation of actual provider-side/request logs. No offer, price, or live response is asserted here.
+
+Merchant-entered assumptions at selection are suitability, units per pack interpretation, shared units, units per attendee, and shipping amount/source. They remain separate from provider-returned facts. Search is not stock reservation, guaranteed delivery, or supplier purchase; no quantity, delivered price, or shipping-time promise is inferred.
+
+### 5.6 Local security defaults (source inspection)
+
+`AppSettings.allow_insecure_dev_cookies` defaults to `false`; local HTTP
+requires an explicit local opt-in. Hosted mode rejects insecure cookies.
+Channel3 credentials are represented as `SecretStr` and are optional. These
+are source observations, not a credential-presence or hosted-runtime check.
+
+The inspected adapter uses `httpx`, Decimal-based GBP-pence parsing, and
+bounded query/result/retry sizes. Its code and mocked tests do not prove the
+current official provider contract or any live provider result. It derives
+an internal offer reference from product ID/domain/URL rather than claiming a
+provider-issued offer identifier.
+
+## 7. Resumed material-costing checkpoint
+
+### Executed verification
+
+Commands ran from `/Users/ohm/Documents/projects/sbox/tipping-point` using
+the repository `.venv`; pytest was explicitly pointed at `tipping_point_test`:
+
+| Command | Observed result |
+|---|---|
+| `TIPPING_POINT_NAME=tipping_point_test .venv/bin/python -m pytest -q tests/unit/test_channel3.py tests/integration/test_material_api.py` | Exit 0; **41 passed, 1 Starlette/httpx deprecation warning, 8.43s**. |
+| `TIPPING_POINT_NAME=tipping_point_test .venv/bin/python -m pytest -q` | Exit 0; **127 passed, 1 Starlette/httpx deprecation warning, 29.69s**. Controlled unit/integration fixtures only; not live-provider evidence. |
+| `.venv/bin/python -m compileall -q packages/tipping_point alembic/versions/0004_material_costing.py tests` | Exit 0; `compileall: ok`. |
+| `.venv/bin/python -m pip check` | Exit 0; `No broken requirements found.` |
+| `git diff --check` | Exit 0; clean at check time. |
+
+### Database observations and preservation
+
+Direct `psql` checks before and after the full suite used `tipping_point_app`:
+
+- `tipping_point_dev` pre-upgrade: `current_database=tipping_point_dev`,
+  `current_user=session_user=tipping_point_app`, revision
+  `0003_merchant_auth`; merchants/workshops/campaign_terms/campaigns all 0 and
+  `material_offer_snapshots` absent. Alembic history was linear with one head,
+  `0004_material_costing` down-revision `0003_merchant_auth`.
+- Applied the approved additive migration with
+  `TIPPING_POINT_NAME=tipping_point_dev .venv/bin/python -m alembic upgrade head`.
+  Observed upgrade `0003_merchant_auth -> 0004_material_costing`. Post-upgrade
+  SQL verified revision `0004_material_costing`, the new table's 22 expected
+  columns, positive-price/GBP/GB-en-GBP checks, restrictive merchant/workshop
+  foreign keys, primary key, and merchant/workshop-retrieval indexes. All
+  merchant/workshop/terms/campaign/material snapshot counts remained zero.
+- `tipping_point_test` before and after the full suite:
+  `current_database=tipping_point_test`,
+  `current_user=session_user=tipping_point_app`, revision
+  `0004_material_costing`.
+- Test DB after suite: one merchant (the sentinel), zero workshops, terms,
+  and material-offer snapshots. Sentinel ID/name/timestamps observed before
+  and after were unchanged:
+  `b2bf3f0f-0255-4e64-9007-861c2a7c0f7e`,
+  `SENTINEL-2026-11-06-verification-preservation`,
+  `2026-11-06 13:20:49.164326+00`,
+  `2026-11-06 13:20:49.164342+00`.
+- The test DB was not migrated or otherwise altered by the migration command.
+
+### Code changes and remaining evidence limits
+
+The base URL validator now consistently rejects non-HTTPS or non-exact hosts,
+credentials, all paths (including `/`), query/fragment delimiters, non-default
+ports, and malformed ports. Parameterized unit tests cover these cases. The
+previous undefined `exc` assertion in that test was removed.
+
+The contradictory prior live-result / zero-call sections were corrected.
+Per the handoff, three submitted read-only searches are conservatively counted
+against the five-request allowance because actual execution is unknown. No live
+calls were made in this checkpoint; at most two remain pending reconciliation.
+No credential presence, official contract fetch, or live offer outcome was
+verified here. No commit or push was made.
+
+### Final-check output limitation
+
+After the successfully observed development migration and post-upgrade schema
+queries, shell integration stopped capturing command completion. Attempts to
+repeat `git diff --check`, compilation, Alembic current/head, and final SQL
+checks returned "Command completion could not be observed". Those final
+attempts are **not verified passes** and must not be inferred from earlier
+successful checks. The 127-test result and migration/schema observations above
+were visibly captured before this output failure. The last documentation edits
+were acknowledged by the editor, but a final independent read/diff check remains
+blocked by tool output. No migration was repeated to resolve this output issue.
