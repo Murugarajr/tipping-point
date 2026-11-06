@@ -1,9 +1,50 @@
-# PayPal Sandbox authorization/void operator test — prepared, not approved to execute
+# PayPal Sandbox authorization/void operator test and execution evidence
 
 This document prepares one operator-driven **Sandbox-only** test. It does not
 authorize a live API call, does not create an account or credential, and does not
 connect the adapter to bookings. The local runner uses the existing standalone
 adapter and its server-side configuration only.
+
+## Closed run: user-executed terminal evidence (2026-11-06)
+
+**Evidence attribution:** this section records terminal output reported by the
+operator as **USER-EXECUTED** evidence. This documentation update made no
+PayPal request, did not independently re-run the stages, and did not alter
+provider state.
+
+The existing Sandbox run `paypal-auth-2026-11-06-a` is closed as **successfully
+reconciled and voided**:
+
+- Reconciliation reported that the expected merchant/payee, reference, and GBP
+  1.00 amount matched the existing order.
+- Existing authorization `85J05450SK592051J` was retrieved as `CREATED`.
+- No captures were reported for that order observation.
+- The operator reported a successful `void`, followed by `verify-void`
+  retrieval of the same authorization as `VOIDED`.
+- Preserve the ignored private record
+  `.private/paypal-sandbox-runs/paypal-auth-2026-11-06-a.json` and its existing
+  create, authorize, and void operation IDs. Do not make more PayPal requests
+  or manually change provider state for this closed run.
+
+### Root cause resolved without repeating authorization
+
+The original parser searched only top-level `payments.authorizations` and
+`payments.captures`. The provider representation placed the authorization at
+`purchase_units[*].payments.authorizations`. The corrected parser reads payment
+resources embedded in purchase units and recovered the actual authorization.
+The authorization was **not retried or repeated**.
+
+### Browser return-flow limitation remains open
+
+The buyer approved the Sandbox checkout, but the provider-hosted checkout
+remained loading without completing a return flow. The current create-order
+payload does not supply `application_context.return_url` or `cancel_url`.
+Proper return/cancel handling remains required before guest-facing checkout.
+
+### Scope not verified by this run
+
+This terminal evidence does not verify capture, refunds, webhooks, booking or
+admission integration, group settlement, or any production/live payment flow.
 
 ## Safety properties
 
@@ -19,7 +60,13 @@ adapter and its server-side configuration only.
   and outcomes only—never OAuth tokens, client secrets, or buyer credentials.
 - A resumed run reuses each operation’s exact request ID and payload. It refuses
   to replace a differing create/authorize/void operation. An unknown mutation
-  outcome blocks all new mutations until reconciled through retrieval.
+  outcome blocks all new mutations until reconciled through retrieval. The
+  `reconcile` stage is read-only: it retrieves the saved order and, only if that
+  order exposes exactly one authorization, retrieves that authorization before
+  preserving its ID. It never creates, authorizes, captures, refunds, or voids.
+  The `diagnose-order` stage is also read-only and retrieves only the saved order
+  once. It records an allowlisted response-structure diagnostic before domain
+  normalization; it never follows resource references or changes an outcome.
 - The runner never asks for a buyer password. The operator approves using the
   **actual `approve` link returned by PayPal**, only after it is validated as
   HTTPS on `www.sandbox.paypal.com`; it is never constructed locally.
@@ -81,6 +128,8 @@ inspect its result, and do not continue automatically:
 # Open only the provider-returned URL printed by create; approve in the separate Sandbox buyer browser.
 .venv/bin/python scripts/paypal_sandbox_authorization_test.py --stage inspect-order --allow-network --run-id paypal-auth-2026-11-06-a --reference-id operator-test-2026-11-06-a --expected-payee 'confirmed-sandbox-payee'
 .venv/bin/python scripts/paypal_sandbox_authorization_test.py --stage authorize --allow-network --run-id paypal-auth-2026-11-06-a --reference-id operator-test-2026-11-06-a --expected-payee 'confirmed-sandbox-payee'
+.venv/bin/python scripts/paypal_sandbox_authorization_test.py --stage diagnose-order --allow-network --run-id paypal-auth-2026-11-06-a --reference-id operator-test-2026-11-06-a --expected-payee 'confirmed-sandbox-payee'
+.venv/bin/python scripts/paypal_sandbox_authorization_test.py --stage reconcile --allow-network --run-id paypal-auth-2026-11-06-a --reference-id operator-test-2026-11-06-a --expected-payee 'confirmed-sandbox-payee'
 .venv/bin/python scripts/paypal_sandbox_authorization_test.py --stage inspect-authorization --allow-network --run-id paypal-auth-2026-11-06-a --reference-id operator-test-2026-11-06-a --expected-payee 'confirmed-sandbox-payee'
 .venv/bin/python scripts/paypal_sandbox_authorization_test.py --stage void --allow-network --run-id paypal-auth-2026-11-06-a --reference-id operator-test-2026-11-06-a --expected-payee 'confirmed-sandbox-payee'
 .venv/bin/python scripts/paypal_sandbox_authorization_test.py --stage verify-void --allow-network --run-id paypal-auth-2026-11-06-a --reference-id operator-test-2026-11-06-a --expected-payee 'confirmed-sandbox-payee'

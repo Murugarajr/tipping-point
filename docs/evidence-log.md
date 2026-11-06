@@ -4,6 +4,49 @@ This file records verification claims, corrections, and deviations. Historical
 entries include unsupported claims; they are not automatically verified evidence.
 The correction below supersedes conflicting assertions elsewhere in this file.
 
+## PayPal Sandbox run closed — user-executed terminal evidence (2026-11-06)
+
+**Evidence attribution:** the following is terminal output and state reported by
+the operator as **USER-EXECUTED** evidence. It is not an agent-executed PayPal
+verification in this documentation update. No PayPal request was made while
+recording this entry, and no provider state was manually altered.
+
+Run `paypal-auth-2026-11-06-a` is closed as **successfully reconciled and
+voided**:
+
+- Reconciliation reported the expected merchant/payee, reference, and GBP 1.00
+  amount as matching the existing order.
+- Authorization `85J05450SK592051J` was retrieved as `CREATED`.
+- The order reported no captures. This is scoped to this order observation; it
+  does not verify capture functionality.
+- The operator reported that `void` succeeded and that `verify-void` retrieved
+  the same authorization as `VOIDED`.
+- The ignored private run record at
+  `.private/paypal-sandbox-runs/paypal-auth-2026-11-06-a.json` is preserved,
+  including its existing create/authorize/void operation IDs and results. It
+  must not be replaced or scrubbed as part of this closure.
+
+### Reconciliation root cause and correction
+
+The original authorization response appeared unusable because the order parser
+looked only for `payments.authorizations` and `payments.captures` at the order
+top level. PayPal returned the payment resource under
+`purchase_units[*].payments.authorizations`. The corrected parser reads the
+purchase-unit payment resources and recovered the existing authorization
+reference. The authorization was **not repeated** to recover it.
+
+### Separate browser-return limitation
+
+Buyer approval succeeded, but the provider-hosted checkout remained loading and
+did not complete a return flow. The current authorization-order payload still
+does not establish guest-facing `return_url`/`cancel_url` handling. Proper
+return and cancellation handling remains required before guest-facing checkout.
+
+### Explicit non-claims
+
+This closed Sandbox run does **not** verify capture, refunds, webhooks, booking
+integration/admission, group settlement, or any production/live behavior.
+
 ## Current closure correction and execution blocker (2026-11-06)
 
 The material-costing code checkpoint is provisionally accepted, **not live

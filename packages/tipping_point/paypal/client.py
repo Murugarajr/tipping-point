@@ -221,6 +221,16 @@ class PayPalAuthorizationSummary:
 
 
 @dataclass(frozen=True)
+class PayPalCaptureSummary:
+    """Capture reference embedded in an order resource."""
+
+    capture_id: str
+    status: str
+    amount_minor: int | None
+    currency: str | None
+
+
+@dataclass(frozen=True)
 class PayPalOrder:
     """Sanitized snapshot of an Orders v2 order resource."""
 
@@ -233,6 +243,7 @@ class PayPalOrder:
     currency: str | None
     approve_url: str | None
     authorizations: tuple[PayPalAuthorizationSummary, ...]
+    captures: tuple[PayPalCaptureSummary, ...]
     retrieved_at: datetime
 
 
@@ -340,6 +351,63 @@ def _parse_authorization_summary(payload: object) -> PayPalAuthorizationSummary:
     )
 
 
+def _parse_capture_summary(payload: object) -> PayPalCaptureSummary:
+    """Normalize a ``payments.captures[]`` entry from an order."""
+    if not isinstance(payload, dict):
+        raise PayPalResponseError("PayPal capture entry was not an object")
+    capture_id = _clean_str(payload.get("id"))
+    if capture_id is None:
+        raise PayPalResponseError("PayPal capture entry was missing id")
+    money = _parse_money(payload.get("amount"))
+    return PayPalCaptureSummary(
+        capture_id=capture_id,
+        status=_clean_str(payload.get("status")) or "UNKNOWN",
+        amount_minor=money.amount_minor if money else None,
+        currency=money.currency if money else None,
+    )
+
+
+def _embedded_payment_summaries(
+    payload: dict[str, object],
+) -> tuple[tuple[PayPalAuthorizationSummary, ...], tuple[PayPalCaptureSummary, ...]]:
+    """Collect payment resources from top-level and purchase-unit representations.
+
+    Orders v2 normally embeds payment resources under each purchase unit. The
+    top-level location is retained for compatibility with sparse/provider test
+    representations accepted before embedded resources were modeled.
+    """
+    payment_objects: list[dict[str, object]] = []
+    top_level_payments = payload.get("payments")
+    if isinstance(top_level_payments, dict):
+        payment_objects.append(top_level_payments)
+    purchase_units = payload.get("purchase_units")
+    if isinstance(purchase_units, list):
+        for unit in purchase_units:
+            if isinstance(unit, dict) and isinstance(unit.get("payments"), dict):
+                payment_objects.append(unit["payments"])
+
+    authorizations: list[PayPalAuthorizationSummary] = []
+    captures: list[PayPalCaptureSummary] = []
+    authorization_ids: set[str] = set()
+    capture_ids: set[str] = set()
+    for payments in payment_objects:
+        raw_authorizations = payments.get("authorizations")
+        if isinstance(raw_authorizations, list):
+            for entry in raw_authorizations:
+                authorization = _parse_authorization_summary(entry)
+                if authorization.authorization_id not in authorization_ids:
+                    authorization_ids.add(authorization.authorization_id)
+                    authorizations.append(authorization)
+        raw_captures = payments.get("captures")
+        if isinstance(raw_captures, list):
+            for entry in raw_captures:
+                capture = _parse_capture_summary(entry)
+                if capture.capture_id not in capture_ids:
+                    capture_ids.add(capture.capture_id)
+                    captures.append(capture)
+    return tuple(authorizations), tuple(captures)
+
+
 def parse_order(payload: object, *, retrieved_at: datetime | None = None) -> PayPalOrder:
     """Normalize an Orders v2 order resource payload.
 
@@ -365,15 +433,7 @@ def parse_order(payload: object, *, retrieved_at: datetime | None = None) -> Pay
                     payee.get("email_address")
                 )
             money = _parse_money(first_unit.get("amount"))
-    authorizations: tuple[PayPalAuthorizationSummary, ...] = ()
-    payments = payload.get("payments")
-    if isinstance(payments, dict):
-        raw_authorizations = payments.get("authorizations")
-        if isinstance(raw_authorizations, list):
-            authorizations = tuple(
-                _parse_authorization_summary(entry)
-                for entry in raw_authorizations
-            )
+    authorizations, captures = _embedded_payment_summaries(payload)
     approve_url = next(
         (
             link.href
@@ -392,6 +452,7 @@ def parse_order(payload: object, *, retrieved_at: datetime | None = None) -> Pay
         currency=money.currency if money else None,
         approve_url=approve_url,
         authorizations=authorizations,
+        captures=captures,
         retrieved_at=retrieved_at or datetime.now(timezone.utc),
     )
 
@@ -815,6 +876,22 @@ class PayPalGateway:
         self._check_response(response)
         payload = self._json_payload(response)
         return parse_order(payload, retrieved_at=retrieved_at)
+
+    async def get_order_response_for_diagnostic(
+        self,
+        provider_order_id: str,
+    ) -> httpx.Response:
+        """Fetch one order response for a tightly allowlisted structural diagnostic.
+
+        This is read-only and intentionally returns the checked HTTP response before
+        domain normalization. Callers must inspect only an allowlisted diagnostic
+        projection and must never log or persist its raw headers or response body.
+        """
+        order_id = _require_provider_id(provider_order_id, "provider_order_id")
+        path = f"{PAYPAL_ORDERS_PATH}/{quote(order_id, safe='')}"
+        response = await self._request("GET", path)
+        self._check_response(response)
+        return response
 
     async def get_authorization(
         self,

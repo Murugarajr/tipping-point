@@ -21,7 +21,7 @@ from tipping_point.settings import AppSettings
 def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(description=__doc__)
     command.add_argument("--stage", default="preflight", choices=(
-        "preflight", "create", "inspect-order", "authorize",
+        "preflight", "reconcile", "diagnose-order", "create", "inspect-order", "authorize",
         "inspect-authorization", "void", "verify-void",
     ))
     command.add_argument("--run-id", required=True)

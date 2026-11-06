@@ -343,6 +343,7 @@ def test_authorize_order_returns_created_authorization() -> None:
     assert request.method == "POST"
     assert request.url.path == f"/v2/checkout/orders/{ORDER_ID}/authorize"
     assert request.headers["paypal-request-id"] == OPERATION_ID
+    assert request.headers["prefer"] == "return=representation"
     assert request.read() == b"{}"
     assert order.status == "COMPLETED"
     assert len(order.authorizations) == 1
@@ -351,6 +352,30 @@ def test_authorize_order_returns_created_authorization() -> None:
     assert summary.status == "CREATED"
     assert summary.amount_minor == 2500
     assert summary.currency == "GBP"
+
+
+def test_order_parser_collects_purchase_unit_payment_resources() -> None:
+    order = parse_order({
+        "id": ORDER_ID,
+        "status": "COMPLETED",
+        "intent": "AUTHORIZE",
+        "purchase_units": [{
+            "reference_id": "booking-fixture-001",
+            "payee": {"merchant_id": "sandbox-merchant-fixture"},
+            "amount": {"currency_code": "GBP", "value": "25.00"},
+            "payments": {
+                "authorizations": [{
+                    "id": AUTHORIZATION_ID,
+                    "status": "CREATED",
+                    "amount": {"currency_code": "GBP", "value": "25.00"},
+                }],
+            },
+        }],
+    })
+    assert [(item.authorization_id, item.status, item.amount_minor, item.currency) for item in order.authorizations] == [
+        (AUTHORIZATION_ID, "CREATED", 2500, "GBP"),
+    ]
+    assert order.captures == ()
 
 
 def test_get_authorization_normalizes_provider_resource() -> None:
