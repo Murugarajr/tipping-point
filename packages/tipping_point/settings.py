@@ -1,4 +1,4 @@
-"""Application settings for cookies, sessions, origins, and throttling.
+"""Application settings for cookies, sessions, integration credentials, and throttling.
 
 All values are environment-driven via the TIPPING_POINT_ prefix (same
 prefix as the database settings; unrelated keys are ignored). Hosted
@@ -83,12 +83,57 @@ class AppSettings(BaseSettings):
         ),
     )
 
+    paypal_env: Literal["sandbox"] = Field(
+        default="sandbox",
+        validation_alias=AliasChoices(
+            "PAYPAL_ENV",
+            "TIPPING_POINT_PAYPAL_ENV",
+            "paypal_env",
+        ),
+    )
+    paypal_client_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "PAYPAL_CLIENT_ID",
+            "TIPPING_POINT_PAYPAL_CLIENT_ID",
+            "paypal_client_id",
+        ),
+    )
+    paypal_client_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "PAYPAL_CLIENT_SECRET",
+            "TIPPING_POINT_PAYPAL_CLIENT_SECRET",
+            "paypal_client_secret",
+        ),
+    )
+    paypal_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=30.0,
+        validation_alias=AliasChoices(
+            "PAYPAL_TIMEOUT_SECONDS",
+            "TIPPING_POINT_PAYPAL_TIMEOUT_SECONDS",
+            "paypal_timeout_seconds",
+        ),
+    )
+
     @property
     def has_channel3_credentials(self) -> bool:
         """Whether a non-empty Channel3 API key is configured server-side."""
         if self.channel3_api_key is None:
             return False
         return bool(self.channel3_api_key.get_secret_value().strip())
+
+    @property
+    def has_paypal_credentials(self) -> bool:
+        """Whether non-empty PayPal Sandbox credentials are configured."""
+        if self.paypal_client_id is None or self.paypal_client_secret is None:
+            return False
+        return bool(
+            self.paypal_client_id.strip()
+            and self.paypal_client_secret.get_secret_value().strip()
+        )
 
     @property
     def origins(self) -> frozenset[str]:

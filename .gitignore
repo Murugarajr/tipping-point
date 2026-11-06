@@ -19,6 +19,10 @@ dist/
 .env.*
 !.env.example
 
+# Local, operator-only PayPal Sandbox test records. These records contain
+# provider references and test metadata, never credentials or tokens.
+.private/paypal-sandbox-runs/
+
 # Database files
 *.db
 *.sqlite

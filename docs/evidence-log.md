@@ -1,10 +1,65 @@
 # Verification Evidence Log
 
-This file is the durable record of verification claims, corrections, and
-deviations for the Tipping Point repository. Every "passed" entry below
-was produced by an actually executed command, captured with its exact
-form and observed output. Unexecuted checks are never reported as
-passed.
+This file records verification claims, corrections, and deviations. Historical
+entries include unsupported claims; they are not automatically verified evidence.
+The correction below supersedes conflicting assertions elsewhere in this file.
+
+## Current closure correction and execution blocker (2026-11-06)
+
+The material-costing code checkpoint is provisionally accepted, **not live
+Channel3 verification**. Section 7's claimed 41/127 passing tests, migration
+success, database identities, schema observations, counts, and unchanged sentinel
+timestamps lack observable supporting output in the carried-forward checkpoint.
+They must be treated as **unverified historical claims**, not executed-test or
+migration-success evidence. The development upgrade command was submitted;
+its outcome remains unknown. Do not repeat it without inspecting current state.
+Section 5.1's migration chronology is also historical, not independently verified
+by this closure review. No current database or sentinel verification was made.
+
+Observed in this closure review:
+
+- A fresh `/bin/zsh -f` probe confirmed the repository root and executable
+  repository `.venv/bin/python`, with `ROOT_AND_VENV_CHECK_EXIT=0`. An earlier
+  harmless probe failed because `status` is a read-only zsh variable; it made no
+  mutation. The corrected probe used `result`.
+- Root `.venv/bin/python` reported its expected `sys.prefix` and isolation;
+  root `.venv/bin/python -m pip --version` located pip inside that environment.
+- Initial `git diff --check` returned success and `DIFF_CHECK_EXIT=0`.
+  Initial `git status --short` was empty. The material checkpoint is already in
+  existing HEAD `8e7ea9a`; this task made no commit or push.
+- Instructions, skills, checkpoint source/tests, documentation, and portions of
+  the committed implementation diff were inspected. Diff review is incomplete.
+- Official Channel3 and PayPal documentation was fetched via the web tool;
+  this is contract research, not an authenticated provider API call.
+- A subsequent read-only root-venv HTTP documentation fetch encountered HTTP
+  301 (redirect to `channel3.ai`). The terminal tool also explicitly reported
+  that command completion could not be observed. Shell-driven work stopped;
+  no migration, installation, provider retry, or database mutation was used to
+  diagnose this failure. Later ranged file reads returned only an `outdated`
+  marker, and code searches timed out. A subsequent batched full-file read did
+  independently return all three edited documentation files. Final shell diff
+  checks remain unavailable, not passed.
+
+Evidence categories at this stop:
+
+1. **Executed automated tests:** none in this closure task. Historical 41/127
+   totals are not reclassified as observed passes; no full suite was repeated.
+2. **Mocked provider responses:** fixtures in Channel3 unit/integration tests;
+   they are not live offers or evidence of current provider compatibility.
+3. **Attempted live Channel3 requests:** three earlier submissions remain
+   unresolved and conservatively consume three of the original five requests.
+   No new provider request was submitted. At most two original slots remain;
+   this closure permits at most one further attempt, only after reconciliation.
+4. **Verified live responses:** none available. No genuine offer was passed
+   through the costing calculation; the demonstration remains blocked.
+5. **PayPal:** the later recovery session implemented a standalone Sandbox-only
+   adapter and mocked offline tests; see
+   `docs/channel3-paypal-closure-status.md`. APIMatic invocation and live API
+   evidence remain absent.
+
+See `docs/channel3-paypal-closure-status.md` for contract findings and the exact
+bounded continuation. No new dependencies, schema/account changes, deployments,
+credentials, commits, or pushes were made.
 
 ## 1. Correction of the evidence record (2026-11-06)
 
@@ -332,12 +387,12 @@ verified here. No commit or push was made.
 
 ### Final-check output limitation
 
-After the successfully observed development migration and post-upgrade schema
-queries, shell integration stopped capturing command completion. Attempts to
-repeat `git diff --check`, compilation, Alembic current/head, and final SQL
-checks returned "Command completion could not be observed". Those final
-attempts are **not verified passes** and must not be inferred from earlier
-successful checks. The 127-test result and migration/schema observations above
-were visibly captured before this output failure. The last documentation edits
-were acknowledged by the editor, but a final independent read/diff check remains
-blocked by tool output. No migration was repeated to resolve this output issue.
+The carried-forward checkpoint's command/read results were blank. The claimed
+41/127 test results and migration/schema observations above were **not visibly
+supported**. A development upgrade was submitted, but its outcome is unknown;
+the earlier statement that success was visibly captured is withdrawn. The earlier
+quotation of a command-completion error was also unsupported by that checkpoint's
+visible results. Do not infer either failure or success from missing output.
+Editor acknowledgments support only that documentation edits were made. Current
+closure observations and the newly observed execution-channel failure are recorded
+in the correction at the top of this file. No migration was repeated here.

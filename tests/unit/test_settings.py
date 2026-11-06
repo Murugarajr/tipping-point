@@ -1,6 +1,7 @@
-"""Settings tests for server-side Channel3 credentials and aliases."""
+"""Settings tests for server-side integration credentials and aliases."""
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, ValidationError
 
 from tipping_point.settings import AppSettings
 
@@ -59,3 +60,32 @@ def test_insecure_cookie_configuration_requires_explicit_local_opt_in():
         pass
     else:
         raise AssertionError("hosted insecure cookies unexpectedly accepted")
+
+
+def test_paypal_settings_default_to_sandbox_without_credentials() -> None:
+    settings = AppSettings(_env_file=None)
+    assert settings.paypal_env == "sandbox"
+    assert settings.paypal_client_id is None
+    assert settings.paypal_client_secret is None
+    assert settings.paypal_timeout_seconds == 10.0
+    assert settings.has_paypal_credentials is False
+
+
+def test_paypal_settings_read_env_aliases_and_hide_secret_value() -> None:
+    settings = AppSettings(
+        _env_file=None,
+        PAYPAL_CLIENT_ID="fixture-paypal-client-id",
+        PAYPAL_CLIENT_SECRET="fixture-paypal-client-secret",
+    )
+    assert settings.paypal_env == "sandbox"
+    assert settings.has_paypal_credentials is True
+    assert isinstance(settings.paypal_client_secret, SecretStr)
+    assert settings.paypal_client_secret.get_secret_value() == (
+        "fixture-paypal-client-secret"
+    )
+    assert "fixture-paypal-client-secret" not in repr(settings)
+
+
+def test_paypal_live_mode_is_refused_by_settings_validation() -> None:
+    with pytest.raises(ValidationError):
+        AppSettings(_env_file=None, PAYPAL_ENV="live")
