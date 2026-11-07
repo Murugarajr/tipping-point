@@ -1,4 +1,4 @@
-import type { DraftPayload, MaterialInput, ViabilityPreview, WorkshopDetail } from "../types";
+import type { DraftPayload, MaterialInput, SettlementStatus, ViabilityPreview, WorkshopDetail } from "../types";
 
 export const sections = ["basics", "materials", "economics", "review"] as const;
 export type Section = typeof sections[number];
@@ -83,4 +83,17 @@ export function materialIsSaved(line: MaterialInput, detail: WorkshopDetail | nu
 }
 export function draftDateLabel(value: string): string {
   return value && Number.isFinite(new Date(value).getTime()) ? displayDate(new Date(value).toISOString()) : "Not set";
+}
+
+/** Headline never shows completed cleanup or confirmation that the saved state does not support. */
+export function settlementHeadline(status: SettlementStatus): string {
+  const cleanup = status.sandbox_cleanup;
+  if (cleanup) {
+    if (cleanup.status === "REFUNDED" && status.state === "CANCELLED") return "Test campaign cancelled; full Sandbox refund verified";
+    if (cleanup.status === "REVIEW_REQUIRED") return "Test campaign cancelled; refund requires operator review";
+    return "Test campaign cancelled; refund processing";
+  }
+  if (status.state === "CONFIRMED") return "Workshop financially confirmed";
+  if (status.state === "CANCELLED") return "Campaign cancelled after cleanup";
+  return `Campaign ${status.state.toLowerCase()}`;
 }

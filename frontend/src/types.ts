@@ -29,6 +29,7 @@ export interface GuestBooking {
   workshop_confirmed?: boolean;
   captured_minor?: number;
   refunded_minor?: number;
+  sandbox_cleanup_status?: SandboxCleanupState | null;
 }
 
 export interface SessionInfo {
@@ -108,6 +109,17 @@ export interface ViabilityPreview {
   materials_note: string;
 }
 
+/** Approved Sandbox operator-test cleanup only; never a general refund policy. */
+export type SandboxCleanupState = "REFUND_PROCESSING" | "REFUNDED" | "REVIEW_REQUIRED";
+
+export interface SandboxCleanupStatus {
+  status: SandboxCleanupState;
+  reason: string | null;
+  requested_at: string | null;
+  previously_confirmed: boolean;
+  review_reason: string | null;
+}
+
 export interface SettlementStatus {
   state: string;
   decision_result: "COLLECT" | "RELEASE" | "REVIEW_REQUIRED" | null;
@@ -117,6 +129,7 @@ export interface SettlementStatus {
   authorized_minor: number;
   collected_minor: number;
   refunded_minor: number;
+  net_collected_minor?: number;
   capture_pending: number;
   release_pending: number;
   refund_pending: number;
@@ -127,6 +140,7 @@ export interface SettlementStatus {
   estimated_fees_minor: number | null;
   estimated_surplus_minor: number | null;
   post_collection_surplus_minor: number | null;
+  sandbox_cleanup?: SandboxCleanupStatus | null;
 }
 
 export interface Campaign {

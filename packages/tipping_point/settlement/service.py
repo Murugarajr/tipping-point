@@ -8,6 +8,7 @@ from ..db.models import Booking, BookingEvent, Campaign, CampaignDecision, Decis
 from ..guest.payments import BookingPaymentService, validate_authorization_association
 from ..guest.service import utcnow
 from ..paypal.client import PayPalError, PayPalRequestError
+from .decision import cleanup_intent
 
 UNRESOLVED = ("IN_FLIGHT", "UNKNOWN", "PROVIDER_PENDING")
 CAPTURE_FAILURES = ("DECLINED", "DENIED", "FAILED")
@@ -93,6 +94,10 @@ class SettlementService:
         decision = self._decision(campaign_id)
         booking = self.payments._booking(booking_id, lock=True)
         member = self._member(booking_id)
+        if kind == "CAPTURE" and cleanup_intent(decision):
+            # Operator test cleanup is refund-only; no capture claim (even retrieval) may restart.
+            self.db.commit()
+            return None
         if kind == "CAPTURE":
             scope = member.authorization_id
             payload = {"authorization_id": scope, "body": build_capture_payload(member.amount_minor, member.currency)}

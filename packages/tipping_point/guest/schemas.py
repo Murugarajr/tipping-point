@@ -59,3 +59,4 @@ class BookingOut(BaseModel):
     workshop_confirmed: bool = False
     captured_minor: int = 0
     refunded_minor: int = 0
+    sandbox_cleanup_status: Literal["REFUND_PROCESSING", "REFUNDED", "REVIEW_REQUIRED"] | None = None

@@ -11,6 +11,15 @@ from ..economics.calculator import ALGORITHM_VERSION
 from ..guest.service import fail, utcnow
 
 
+# Approved Sandbox operator-test exception (see settlement/operator_cleanup.py).
+CLEANUP_PURPOSE = "OPERATOR_TEST_CLEANUP"
+CLEANUP_INTENT_KEY = "operator_test_cleanup"
+
+
+def cleanup_intent(decision):
+    return (decision.post_collection or {}).get(CLEANUP_INTENT_KEY) if decision is not None else None
+
+
 def schema_available(db):
     return bool(db.scalar(text(
         "SELECT to_regclass('campaign_decisions') IS NOT NULL "
@@ -28,7 +37,10 @@ def enqueue(db, campaign, *, purpose="PROGRESS", due_at=None):
         db.add(work)
     else:
         work.version += 1
-        work.purpose = purpose
+        # A re-armed operator cleanup row stays scoped to that cleanup purpose;
+        # wakeups never hand it back to the generic dispatcher.
+        if work.purpose != CLEANUP_PURPOSE:
+            work.purpose = purpose
         work.due_at = min(work.due_at, due_at) if work.state != "DONE" else due_at
         if work.state != "LEASED":
             work.state = "READY"

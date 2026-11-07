@@ -104,7 +104,7 @@ export function GuestBookingStatus({ id, suffix }: { id: string; suffix?: "retur
       {error && <p className="form-error" role="alert">{error}</p>}
       {!booking && !error && <p role="status">Retrieving your saved reservation…</p>}
       {booking && <div className="guest-status-card"><h2>{booking.workshop_title}</h2><p className="large-copy">{money(booking.amount_minor)} · one place · {booking.currency}</p><p>{presentation?.[1]}</p><p>{booking.notice}</p>{!settlementPayment && booking.notice !== authorizationExplanation && <p>{authorizationExplanation}</p>}
-        {campaignStatusMessage(booking.campaign_status) && <p className="preview-callout">{campaignStatusMessage(booking.campaign_status)}</p>}
+        {campaignStatusMessage(booking.campaign_status, booking.sandbox_cleanup_status) && <p className="preview-callout">{campaignStatusMessage(booking.campaign_status, booking.sandbox_cleanup_status)}</p>}
         {settlementPayment && <p>Verified collected: {money(booking.captured_minor ?? 0)} · Verified refunded: {money(booking.refunded_minor ?? 0)}. Pending amounts are not counted as completed.</p>}
         <dl className="detail-facts"><div><dt>Seat currently held</dt><dd>{booking.seat_held ? "Yes, according to saved server status" : "No"}</dd></div><div><dt>Temporary reservation expires · London time</dt><dd>{displayDate(booking.reservation_expires_at)}</dd></div><div><dt>Saved payment state</dt><dd>{booking.payment_state}</dd></div><div><dt>Last saved update · London time</dt><dd>{displayDate(booking.updated_at)}</dd></div></dl>
         <div className="guest-actions">

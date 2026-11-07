@@ -128,6 +128,16 @@ class WorkshopOut(BaseModel):
     campaign_id: str | None = None
 
 
+class SandboxCleanupStatusOut(BaseModel):
+    """Approved Sandbox operator-test cleanup only; never a general refund policy."""
+
+    status: Literal["REFUND_PROCESSING", "REFUNDED", "REVIEW_REQUIRED"]
+    reason: str | None
+    requested_at: datetime | None
+    previously_confirmed: bool
+    review_reason: str | None
+
+
 class SettlementStatusOut(BaseModel):
     state: str
     decision_result: Literal["COLLECT", "RELEASE", "REVIEW_REQUIRED"] | None
@@ -137,6 +147,7 @@ class SettlementStatusOut(BaseModel):
     authorized_minor: int
     collected_minor: int
     refunded_minor: int
+    net_collected_minor: int = 0
     capture_pending: int
     release_pending: int
     refund_pending: int
@@ -147,6 +158,7 @@ class SettlementStatusOut(BaseModel):
     estimated_fees_minor: int | None
     estimated_surplus_minor: int | None
     post_collection_surplus_minor: int | None
+    sandbox_cleanup: SandboxCleanupStatusOut | None = None
 
 
 class CampaignOut(BaseModel):

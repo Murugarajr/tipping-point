@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 
 from ..db.models import Campaign, SettlementWork
 from ..guest.service import utcnow
-from .decision import enqueue, freeze_decision
+from .decision import CLEANUP_PURPOSE, enqueue, freeze_decision
 
 
 @dataclass(frozen=True)
@@ -33,13 +33,22 @@ def discover_due(db, *, limit=100, now=None, campaign_id=None):
     return len(rows)
 
 
-def claim_due(db, *, now=None, campaign_id=None):
+def claim_due(db, *, now=None, campaign_id=None, purpose=None):
+    """Generic claims never take operator-cleanup work; cleanup claims are exact-campaign only."""
     now = now or utcnow()
     query = select(SettlementWork).where(
         SettlementWork.due_at <= now,
         or_(SettlementWork.state == "READY",
             (SettlementWork.state == "LEASED") & (SettlementWork.lease_expires_at <= now)),
     )
+    if purpose == CLEANUP_PURPOSE:
+        if campaign_id is None:
+            raise ValueError("operator cleanup claims require an exact campaign")
+        query = query.where(SettlementWork.purpose == CLEANUP_PURPOSE)
+    elif purpose is None:
+        query = query.where(SettlementWork.purpose != CLEANUP_PURPOSE)
+    else:
+        raise ValueError("unsupported work purpose filter")
     if campaign_id is not None:
         query = query.where(SettlementWork.campaign_id == campaign_id)
     work = db.scalar(query.order_by(SettlementWork.due_at).limit(1).with_for_update(skip_locked=True))

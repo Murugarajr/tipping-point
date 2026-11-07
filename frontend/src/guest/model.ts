@@ -1,4 +1,4 @@
-import type { GuestBooking } from "../types";
+import type { GuestBooking, SandboxCleanupState } from "../types";
 
 export const authorizationExplanation = "This Sandbox prototype authorizes a test payment. An authorization is not a completed charge. The workshop is not confirmed by this step.";
 
@@ -33,7 +33,10 @@ export function guestSettlementPresentation(booking: GuestBooking): readonly [st
   return bookingPresentation(booking.state);
 }
 
-export function campaignStatusMessage(status?: string): string | null {
+export function campaignStatusMessage(status?: string, cleanup?: SandboxCleanupState | null): string | null {
+  if (cleanup === "REFUNDED" && status === "CANCELLED") return "Test campaign cancelled. The full Sandbox refund of your collected payment was verified.";
+  if (cleanup === "REVIEW_REQUIRED") return "Test campaign cancelled; your refund requires operator review. No completed refund is assumed.";
+  if (cleanup) return "Test campaign cancelled; refund processing. Completion and timing are not yet guaranteed.";
   if (!status || status === "OPEN") return null;
   if (status === "CONFIRMED") return "Campaign collection completed. Your own booking status remains authoritative.";
   if (status === "CANCELLED") return "Campaign cancelled. Your release or refund status is shown separately below.";

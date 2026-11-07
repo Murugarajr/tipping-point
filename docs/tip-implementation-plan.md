@@ -511,6 +511,24 @@ DRAFT
 
 Use `REVIEW_REQUIRED` as a separate operational flag for unresolved cases, not as permission to skip compensation.
 
+#### Approved exception: Sandbox operator-test cleanup (2026-11-07)
+
+`CONFIRMED` remains terminal for all ordinary campaign processing. Deadline work, wakeups, guest cancellation and the generic dispatcher never reopen it.
+
+One narrow exception is explicitly approved. It exists only so that a PayPal Sandbox test campaign can be cleaned up:
+
+```text
+Campaign: CONFIRMED -> COMPENSATING -> CANCELLED
+Booking:  PAID -> REFUND_PENDING -> REFUNDED
+```
+
+- Only the guarded operator action may start it (`scripts/process_settlement_work.py --sandbox-test-cleanup`, implemented in `settlement/operator_cleanup.py`). There is no public, guest or merchant endpoint and no general force-cancel option.
+- It applies only when the frozen cohort has exactly one booking with exactly one verified, completed GBP 1.00 capture. The operator must supply the exact campaign, booking and capture IDs, the amount (100 minor units), the currency and a reason. The provider environment must be Sandbox.
+- It cancels the whole single-booking test campaign. It is **not** an attendee-refund policy and **not** a production cancellation policy.
+- The refund reuses the existing durable refund ledger and worker: the logical operation, request ID, payload hash, lease, version fencing and retrieval-only reconciliation.
+- The original confirmation, decision, terms, cohort, capture references and audit evidence are preserved. The cleanup intent and reason are added beside them.
+- The campaign becomes `CANCELLED` and the booking `REFUNDED` only after a verified, completed full refund.
+
 Keep workshop delivery separate:
 
 ```text

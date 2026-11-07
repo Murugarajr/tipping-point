@@ -139,3 +139,70 @@ If a post-authorization check fails, preserve the saved authorization ID and use
 the `void`/`verify-void` stages for cleanup if provider state permits. If cleanup
 cannot be confirmed as `VOIDED`, the record remains unresolved; do not report it
 as cleaned up.
+## Sandbox operator-test cleanup of a confirmed £1 campaign (added 2026-11-07)
+
+This is the approved exception described in `docs/tip-implementation-plan.md` ("Approved exception: Sandbox operator-test cleanup"). It cancels **one** confirmed PayPal Sandbox test campaign whose frozen cohort holds exactly one booking with one verified, completed GBP 1.00 capture. It does this by fully refunding that capture through the existing durable refund ledger.
+
+Ordinary `CONFIRMED` behaviour is unchanged. This is not a production cancellation or attendee-refund policy.
+
+**Status:** implemented and tested offline only (MockTransport, `tipping_point_test`). No real capture or refund has been executed with it.
+
+### Safety properties
+
+- **Inspection is the default.** Without `--execute`, the command takes no locks, writes nothing and makes no provider request. It prints `eligible` and a rejection code.
+- **`--execute` without `--allow-network`** commits only:
+  - the cleanup intent and reason;
+  - the audit event;
+  - the guarded re-arm of the campaign's single `settlement_work` row.
+
+  The campaign becomes `COMPENSATING` and the booking `REFUND_PENDING`. No provider call is made.
+- **`--execute --allow-network`** revalidates eligibility, then runs one exact-campaign cleanup pass. That pass only claims work for this campaign with purpose `OPERATOR_TEST_CLEANUP`. It never runs deadline discovery and never claims other campaigns' work. The generic dispatcher in turn never claims cleanup work.
+- **Every identifier is mandatory:** `--campaign-id`, `--booking-id`, `--capture-id`, `--expected-amount-minor 100`, `--expected-currency GBP` and `--reason`. `--limit` plays no part in cleanup scoping.
+- **It rejects:**
+  - multi-booking cohorts;
+  - mismatched campaign, booking or capture references;
+  - any amount or currency other than GBP 1.00;
+  - a non-Sandbox environment;
+  - any unresolved or conflicting operation;
+  - unrelated bookings that are not yet resolved;
+  - an active work lease;
+  - an existing refund;
+  - any campaign that is not `CONFIRMED` on the first request.
+- **Repeats are idempotent.** A repeated or concurrent request resumes the same logical cleanup and refund operation. Resuming does not require `CONFIRMED`.
+- **Unknown or crashed refund outcomes are never re-posted.** They stay unresolved and need review until reconciled by retrieval, using `--known-refund-id`.
+- **Completion is shown only when it is real.** The campaign becomes `CANCELLED` and the booking `REFUNDED` only after a verified, completed full refund. Pending, failed, cancelled and unknown refunds keep the campaign `COMPENSATING`, with a durable review reason.
+
+### Commands
+
+These use the repository virtual environment. PayPal settings come from the process environment only, as for the existing worker.
+
+First confirm the database target with `.venv/bin/python scripts/verify_db_identity.py`. Do not run any unscoped dispatcher. The command below targets only the campaign you name.
+
+```bash
+# 1. Inspect only (safe; no writes, no provider calls)
+.venv/bin/python scripts/process_settlement_work.py --sandbox-test-cleanup \
+  --campaign-id <campaign-uuid> --booking-id <booking-uuid> --capture-id <capture-id> \
+  --expected-amount-minor 100 --expected-currency GBP \
+  --reason "Sandbox GBP 1.00 operator test campaign cleanup"
+
+# 2. Optional: commit intent/audit/re-armed work only (no provider call)
+.venv/bin/python scripts/process_settlement_work.py --sandbox-test-cleanup --execute \
+  --campaign-id <campaign-uuid> --booking-id <booking-uuid> --capture-id <capture-id> \
+  --expected-amount-minor 100 --expected-currency GBP \
+  --reason "Sandbox GBP 1.00 operator test campaign cleanup"
+
+# 3. Approved live Sandbox refund pass (requires separate explicit approval)
+.venv/bin/python scripts/process_settlement_work.py --sandbox-test-cleanup --execute --allow-network \
+  --campaign-id <campaign-uuid> --booking-id <booking-uuid> --capture-id <capture-id> \
+  --expected-amount-minor 100 --expected-currency GBP \
+  --reason "Sandbox GBP 1.00 operator test campaign cleanup"
+
+# 4. Reconcile an unknown refund by retrieval with a verified refund ID (never re-posts)
+.venv/bin/python scripts/process_settlement_work.py --sandbox-test-cleanup --execute --allow-network \
+  --campaign-id <campaign-uuid> --booking-id <booking-uuid> --capture-id <capture-id> \
+  --expected-amount-minor 100 --expected-currency GBP \
+  --reason "Sandbox GBP 1.00 operator test campaign cleanup" \
+  --known-refund-id <verified-refund-id>
+```
+
+Rerun step 3 to poll a `PENDING` refund. A `FAILED` or `CANCELLED` refund, or one that stays unknown, remains visible as `REVIEW_REQUIRED`. It is not reported as completed cleanup.

@@ -439,3 +439,20 @@ visible results. Do not infer either failure or success from missing output.
 Editor acknowledgments support only that documentation edits were made. Current
 closure observations and the newly observed execution-channel failure are recorded
 in the correction at the top of this file. No migration was repeated here.
+
+## 8. Clarification: development database revision (2026-11-07)
+
+The settlement slice's earlier local verification report (`.private/settlement/final-verification.json`, Git-ignored) recorded `tipping_point_dev` at `0005_guest_reservations`, with no settlement schema yet. That report is kept unchanged as historical evidence of that point in time.
+
+A later checkpoint, `.private/settlement/checkpoint-20261107T1241/development-migration-result.json`, records:
+
+- the development migration to `0006_campaign_settlement`, run as `tipping_point_app` (not a superuser);
+- the three new settlement tables, empty after the migration;
+- all pre-existing records and unrelated schema preserved;
+- exit status 0.
+
+A read-only handoff inspection on 2026-11-07 also observed `tipping_point_dev` at `0006_campaign_settlement` with existing records present.
+
+Development is therefore now at `0006`. This entry clarifies the record; it does not rewrite the earlier `0005` report.
+
+The Sandbox operator-test cleanup added on 2026-11-07 has been verified offline only. That means MockTransport against `tipping_point_test`. No development-database mutation and no real capture or refund were performed.
