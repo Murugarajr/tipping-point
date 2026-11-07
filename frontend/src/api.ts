@@ -1,4 +1,4 @@
-import type { Campaign, DraftPayload, SessionInfo, ViabilityPreview, Workshop } from "./types";
+import type { Campaign, DraftPayload, SessionInfo, ViabilityPreview, Workshop, WorkshopDetail, MaterialSearchResult, MaterialSelection, PublicWorkshop } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly detail: unknown) {
@@ -17,6 +17,7 @@ function csrfTokenFromCookie(): string | null {
 
 function errorMessage(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string") return detail.message;
   if (detail && typeof detail === "object" && "detail" in detail) {
     return errorMessage((detail as { detail: unknown }).detail, fallback);
   }
@@ -30,7 +31,7 @@ async function request<T>(path: string, init: RequestInit = {}, csrf = false): P
   const headers = new Headers(init.headers);
   if (init.body) headers.set("Content-Type", "application/json");
   if (csrf && csrfToken) headers.set("X-CSRF-Token", csrfToken);
-  const response = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  const response = await fetch(path, { ...init, headers, credentials: "same-origin", cache: "no-store" });
   const body = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) throw new ApiError(errorMessage(body, `Request failed (${response.status})`), response.status, body);
   return body as T;
@@ -72,3 +73,18 @@ export function previewWorkshop(workshopId: string): Promise<ViabilityPreview> {
 export function publishWorkshop(workshopId: string): Promise<Campaign> {
   return request<Campaign>(`/api/merchant/workshops/${workshopId}/publish`, { method: "POST" }, true);
 }
+export function getWorkshop(id: string): Promise<WorkshopDetail> {
+  return request(`/api/merchant/workshops/${encodeURIComponent(id)}`);
+}
+export function searchMaterials(id: string, query: string): Promise<MaterialSearchResult> {
+  return request(`/api/merchant/workshops/${encodeURIComponent(id)}/materials/search`, {
+    method: "POST", body: JSON.stringify({ query, limit: 10, in_stock_only: true }),
+  }, true);
+}
+export function selectMaterial(id: string, payload: MaterialSelection): Promise<{ viability_preview: ViabilityPreview }> {
+  return request(`/api/merchant/workshops/${encodeURIComponent(id)}/materials/select`, {
+    method: "POST", body: JSON.stringify(payload),
+  }, true);
+}
+export function listPublicWorkshops(): Promise<PublicWorkshop[]> { return request("/api/workshops"); }
+export function getPublicWorkshop(id: string): Promise<PublicWorkshop> { return request(`/api/workshops/${encodeURIComponent(id)}`); }

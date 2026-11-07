@@ -59,6 +59,8 @@ from .schemas import (
     WorkshopCreateRequest,
     WorkshopEditRequest,
     WorkshopOut,
+    WorkshopDetailOut,
+    MerchantFinancialsInput,
 )
 
 router = APIRouter(prefix="/api/merchant")
@@ -105,6 +107,7 @@ def _open_campaign(db: Session, workshop_id) -> Campaign | None:
 
 def _workshop_out(db: Session, workshop: Workshop) -> WorkshopOut:
     terms = _latest_terms(db, workshop.id)
+    campaign = db.scalars(select(Campaign).where(Campaign.terms_id == terms.id)).first()
     return WorkshopOut(
         workshop_id=str(workshop.id),
         title=workshop.title,
@@ -116,7 +119,37 @@ def _workshop_out(db: Session, workshop: Workshop) -> WorkshopOut:
         is_frozen=terms.is_frozen,
         opens_at=terms.opens_at,
         closes_at=terms.closes_at,
+        campaign_id=str(campaign.id) if campaign is not None else None,
     )
+
+
+def _resolve_financials(
+    payload: MerchantFinancialsInput,
+    current: CampaignFinancialsInput | None = None,
+) -> CampaignFinancialsInput:
+    """Retain server facts; selected-offer changes require materials/select."""
+    previous = {line.name: line for line in current.materials} if current else {}
+    materials = []
+    for line in payload.materials:
+        stored = previous.get(line.name)
+        reference = line.selected_offer_snapshot_id
+        submitted = line.model_dump(mode="json", exclude={"selected_offer_snapshot_id", "offer_provenance"})
+        if reference is not None:
+            if (
+                stored is None or stored.offer_provenance is None
+                or stored.offer_provenance.offer_snapshot_id != reference
+            ):
+                raise HTTPException(status_code=422, detail="selected offer must reference an already reviewed line in this owned draft")
+            original = stored.model_dump(mode="json", exclude={"offer_provenance"})
+            if submitted != original:
+                raise HTTPException(status_code=409, detail="re-review selected offer assumptions through material selection before changing them")
+            materials.append(stored.model_dump(mode="json"))
+        elif stored is not None and stored.offer_provenance is not None:
+            raise HTTPException(status_code=422, detail="retain the selected offer reference or explicitly remove the provider material line")
+        else:
+            materials.append(submitted)
+    inputs = payload.model_dump(mode="json", exclude={"materials"})
+    return CampaignFinancialsInput.model_validate({**inputs, "materials": materials})
 
 
 @router.post("/workshops", status_code=201)
@@ -139,7 +172,7 @@ def create_workshop(
     db.add(workshop)
     db.flush()
     CampaignTermsService(db).create_draft(
-        workshop.id, payload.financials, payload.schedule
+        workshop.id, _resolve_financials(payload.financials), payload.schedule
     )
     return _workshop_out(db, workshop)
 
@@ -158,14 +191,29 @@ def list_workshops(
     return [_workshop_out(db, w) for w in workshops]
 
 
-@router.get("/workshops/{workshop_id}")
+@router.get("/workshops/{workshop_id}", response_model=WorkshopDetailOut)
 def get_workshop(
     workshop_id: _uuid.UUID,
+    request: Request,
+    response: Response,
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
-) -> WorkshopOut:
+) -> WorkshopDetailOut:
     workshop = _owned_workshop(db, auth.merchant.id, workshop_id)
-    return _workshop_out(db, workshop)
+    terms = _latest_terms(db, workshop_id)
+    campaign = db.scalars(select(Campaign).where(Campaign.terms_id == terms.id)).first()
+    response.headers["Cache-Control"] = "no-store"
+    return WorkshopDetailOut(
+        **_workshop_out(db, workshop).model_dump(),
+        financials=CampaignFinancialsInput.model_validate(terms.financial_inputs),
+        campaign=CampaignOut(
+            campaign_id=str(campaign.id), workshop_id=str(workshop.id),
+            status=campaign.status, capacity=campaign.capacity,
+            cutoff_at=campaign.cutoff_at, terms_version=campaign.terms_version,
+            terms_id=str(terms.id), terms_snapshot_hash=terms.snapshot_hash,
+        ) if campaign is not None else None,
+        offer_stale_after_seconds=request.app.state.settings.channel3_offer_stale_after_seconds,
+    )
 
 
 @router.patch("/workshops/{workshop_id}")
@@ -200,7 +248,9 @@ def edit_workshop(
     workshop.currency = payload.financials.currency
     try:
         CampaignTermsService(db).update_draft(
-            terms.id, payload.financials, payload.schedule
+            terms.id,
+            _resolve_financials(payload.financials, CampaignFinancialsInput.model_validate(terms.financial_inputs)),
+            payload.schedule,
         )
     except CampaignTermsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None

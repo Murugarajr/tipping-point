@@ -3,17 +3,27 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..economics import (
     CampaignFinancialsInput,
     CampaignScheduleInput,
+    MaterialLineInput,
 )
+
+
+class MerchantMaterialInput(MaterialLineInput):
+    """Manual assumptions or a reference to an already reviewed server line."""
+
+    selected_offer_snapshot_id: str | None = Field(default=None, max_length=64)
 
 
 class MerchantFinancialsInput(CampaignFinancialsInput):
     """Merchant-supplied terms with no client-controlled offer provenance."""
+
+    materials: list[MerchantMaterialInput] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -113,6 +123,7 @@ class WorkshopOut(BaseModel):
     is_frozen: bool
     opens_at: datetime | None
     closes_at: datetime | None
+    campaign_id: str | None = None
 
 
 class CampaignOut(BaseModel):
@@ -124,6 +135,32 @@ class CampaignOut(BaseModel):
     terms_version: int
     terms_id: str
     terms_snapshot_hash: str
+
+
+class WorkshopDetailOut(WorkshopOut):
+    """Private owner-only saved inputs; never a public endpoint response."""
+
+    financials: CampaignFinancialsInput
+    campaign: CampaignOut | None
+    offer_stale_after_seconds: int
+
+
+class PublicWorkshopOut(BaseModel):
+    """Deliberately public metadata, not a terms/ORM serialization."""
+
+    workshop_id: str
+    campaign_id: str
+    title: str
+    description: str | None
+    currency: Literal["GBP"]
+    ticket_price_minor: int
+    capacity: int
+    opens_at: datetime
+    cutoff_at: datetime
+    publication_status: str
+    booking_window_status: Literal["not_open_yet", "open", "closed", "unavailable"]
+    reservations_available: Literal[False] = False
+    availability_note: str = "Guest reservations and payments are not enabled in this prototype."
 
 
 class MaterialOfferSearchRequest(BaseModel):

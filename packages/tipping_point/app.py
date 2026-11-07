@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .api import auth_routes, material_routes, workshop_routes
+from .api import auth_routes, material_routes, public_routes, workshop_routes
 from .settings import AppSettings
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -60,12 +60,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 response = JSONResponse(
                     status_code=403, content={"detail": "origin not allowed"}
                 )
-                if request.url.path in _AUTH_PATHS:
+                if request.url.path in _AUTH_PATHS or request.url.path.startswith("/api/merchant/"):
                     response.headers["Cache-Control"] = "no-store"
                     response.headers["Pragma"] = "no-cache"
                 return response
         response = await call_next(request)
-        if request.url.path in _AUTH_PATHS:
+        if request.url.path in _AUTH_PATHS or request.url.path.startswith("/api/merchant/"):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         return response
@@ -73,6 +73,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app.include_router(auth_routes.router)
     app.include_router(workshop_routes.router)
     app.include_router(material_routes.router)
+    app.include_router(public_routes.router)
 
     @app.get("/health/live")
     async def health_live():

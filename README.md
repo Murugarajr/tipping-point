@@ -37,13 +37,30 @@ This repository contains the scaffold for the Tipping Point sandbox workshop boo
 
 ## Public Frontend
 
-The existing React/TypeScript/Vite app is in `frontend/`. `/` is public and
-information-first; `/workshops`, `/workshops/:example-id`, `/continue`, and
-`/example-plan` show explicitly labelled editorial demonstrations. They do not
-call merchant APIs, save guest email, reserve places, or authorize payments.
-`/host` and `/host/login` preserve the existing authenticated merchant workspace.
-Host sign-in uses the real CSRF bootstrap, session cookie, `/api/me`, and logout
-contracts. Guest input never grants merchant access.
+The React/TypeScript/Vite app is in `frontend/`. `/` keeps the approved public
+landing page. `/workshops` lists actual published campaigns from the read-only
+API, followed by a separate labelled examples area. `/workshops/:workshop-id`
+shows deliberately public metadata from the authoritative frozen campaign.
+Draft/private IDs return 404 from the public API. `/continue` and `/example-plan`
+remain explicit previews: they do not save email, reserve places or authorize
+payments. Guest input never grants merchant access.
+
+`/host/login` is sign-in only; successful authentication replaces history with
+`/host` or an allowlisted internal return destination. `/host/workshops/new` and
+`/host/workshops/:id` provide Basics, Materials, Economics and Review sections.
+Saved drafts reopen with complete private inputs and material provenance.
+Explicit saves use integer pence converted from validated GBP strings. Reviewed
+provider lines are retained by server-validated reference, never caller-supplied
+provider facts. Attendance scenarios display the actual returned cost curve,
+including non-viable points above the first viable attendance. Publication uses
+the existing locking/validation path and makes inputs read-only.
+
+Host sign-in preserves CSRF bootstrap, server-issued session cookies, `/api/me`
+and real logout invalidation. Same-host reauthentication retains unsaved inputs
+in component memory only; changing merchant resets the mounted editor.
+Channel3 searches are explicit actions only, require a budget acknowledgement,
+and do not reset any existing request allowance. Offline verification never
+calls the live provider.
 
 Use the committed npm lockfile and local frontend tools:
 
@@ -69,9 +86,20 @@ Vite development forwards `/api` to the existing backend at port 8000.
 Run the backend separately with its documented local cookie/origin configuration
 to use real host authentication. Production asset serving under the backend
 origin remains a deployment prerequisite; `vite preview` is only a local check.
-Public listing endpoints, server-issued guest sessions, booking ownership and
-capacity controls, contact handling, and the connected Sandbox checkout and
-settlement flow are still required for genuine guest bookings.
+Server-issued guest sessions, booking ownership/capacity controls, contact
+handling, and connected Sandbox checkout/settlement are still required for
+genuine bookings. Delivery date, venue, duration and category are not stored by
+the current schema and are explicitly unavailable, not fabricated inputs.
+
+Backend integration checks use the existing allowlisted `tipping_point_test`
+database and registered test-owned records. The shared fixture checks the
+existing schema head without migrating; unavailable or outdated schemas are
+reported as skipped. Existing migration-specific tests require a separately
+approved scope. A focused migration-free regression command is:
+
+```bash
+.venv/bin/python -m pytest tests/unit tests/integration/test_public_workbench.py tests/integration/test_workshop_api.py tests/integration/test_material_api.py tests/integration/test_auth.py tests/integration/test_csrf.py tests/integration/test_concurrent_publish.py -q -rs
+```
 
 ## API
 
@@ -101,11 +129,26 @@ All merchant routes derive identity exclusively from the server-side `tipping_se
 - `GET /api/me` – Return the authenticated merchant and session expiration.
 - `POST /api/merchant/workshops` – Create a workshop and initial draft `CampaignTerms` (version 1).
 - `GET /api/merchant/workshops` – List workshops owned by the authenticated merchant.
-- `GET /api/merchant/workshops/{workshop_id}` – Retrieve an owned workshop (returns `404` for unknown or non-owned IDs).
+- `GET /api/merchant/workshops/{workshop_id}` – Owner-only full saved financials, schedule, material provenance and persisted campaign, with `Cache-Control: no-store` (`404` for unknown/non-owned IDs).
 - `PATCH /api/merchant/workshops/{workshop_id}` – Update draft inputs and schedule while unpublished (`409` once published/frozen).
 - `POST /api/merchant/workshops/{workshop_id}/preview` – Pure viability calculation over the current draft inputs (no persistence or freeze).
 - `POST /api/merchant/workshops/{workshop_id}/publish` – Atomically lock the workshop, revalidate and freeze the draft `CampaignTerms` snapshot, verify costs are coverable at maximum capacity, and create (or idempotently return) the `OPEN` `Campaign`. Note: `OPEN` means published; guest booking and payment capability is not enabled in this slice.
 
+### Read-only Public Discovery
+
+- `GET /api/workshops` – Up to 100 published workshop projections, newest first.
+- `GET /api/workshops/{workshop_id}` – Public detail only when a published campaign references valid frozen terms; otherwise `404`.
+
+Responses allowlist title/description, frozen price/capacity/booking dates,
+campaign reference/publication status, and booking-window state. They exclude
+merchant identities, private costs/sourcing, credentials, sessions, guest data,
+payment resources and raw JSON terms. `reservations_available` is always false
+in this slice, including when the published booking window is open.
+
+Draft PATCH material rows can include `selected_offer_snapshot_id` only to
+retain an unchanged, already reviewed line in the owned draft. Forged references,
+changed provider prices/assumptions and raw `offer_provenance` are rejected.
+Use the existing `materials/select` flow to change provider-backed assumptions.
 
 
 ### Channel3 Material Costing

@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from "react";
 import { Arrow, CraftArt, Mark, ThresholdArt } from "./Artwork";
 import { categories, faqs, filterWorkshops, findWorkshop, formatPrice } from "./content";
 import type { CategoryFilter, ExampleWorkshop } from "./content";
+import { PublishedCollection, PublishedDetail } from "./PublishedWorkshops";
 
 function LinkButton({ href, children, secondary = false }: { href: string; children: ReactNode; secondary?: boolean }) {
   return <a className={`tp-button ${secondary ? "tp-button-secondary" : ""}`} href={href}>{children}<Arrow /></a>;
@@ -86,9 +87,9 @@ function WorkshopCard({ workshop }: { workshop: ExampleWorkshop }) {
 function Discovery({ standalone = false }: { standalone?: boolean }) {
   const [category, setCategory] = useState<CategoryFilter>("All workshops");
   const workshops = filterWorkshops(category);
-  return <section className={`section discovery ${standalone ? "standalone-discovery" : ""}`} aria-labelledby="discovery-title">
+  return <section id="example-collection" className={`section discovery ${standalone ? "standalone-discovery" : ""}`} aria-labelledby="discovery-title">
     <div className="section-heading"><div><p className="kicker">Make room for something hands-on</p>{standalone ? <h1 id="discovery-title">What will you<br /><span className="red-text">make next?</span></h1> : <h2 id="discovery-title">A good place to start.</h2>}</div>{!standalone && <a className="text-link" href="/workshops">Explore all examples<Arrow diagonal /></a>}</div>
-    <div className="example-notice"><span className="outline-pill">Example collection</span><p>A taste of what’s possible, not live inventory. Prices, locations and inclusions are illustrative. No public listing API or guest booking is connected.</p></div>
+    <div className="example-notice"><span className="outline-pill">Separate example collection</span><p>A taste of what’s possible, not live inventory. Prices, locations and inclusions are illustrative. These examples are separate from published workshops and cannot be booked.</p></div>
     <div className="filter-row" role="group" aria-label="Filter example workshops by category">{categories.map((item) => <button key={item} aria-pressed={category === item} className={category === item ? "selected" : ""} onClick={() => setCategory(item)}>{item}</button>)}</div>
     <p className="results-count" role="status">{workshops.length} example {workshops.length === 1 ? "workshop" : "workshops"}{category !== "All workshops" ? ` · ${category}` : ""}</p>
     {workshops.length ? <div className="example-grid">{workshops.map((workshop) => <WorkshopCard key={workshop.id} workshop={workshop} />)}</div> : <div className="public-empty"><h3>No {category.toLowerCase()} examples just yet.</h3><p>Try another category to find something worth making.</p><button className="tp-button" onClick={() => setCategory("All workshops")}>Reset filters<Arrow /></button></div>}
@@ -187,11 +188,13 @@ export default function PublicApp({ path }: { path: string }) {
   let page: ReactNode;
   let title: string;
   if (path === "/") { page = <Home />; title = "Good workshops. Enough people."; }
-  else if (path === "/workshops") { page = <Discovery standalone />; title = "Explore example workshops"; }
+  else if (path === "/workshops") { page = <><PublishedCollection standalone /><Discovery /></>; title = "Explore workshops"; }
   else if (path.startsWith("/workshops/")) {
     const workshop = findWorkshop(path.slice("/workshops/".length));
-    page = workshop ? <Detail workshop={workshop} /> : <NotFound />;
-    title = workshop?.title ?? "Page not found";
+    const id = path.slice("/workshops/".length);
+    const publishedReference = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id);
+    page = workshop ? <Detail workshop={workshop} /> : publishedReference ? <PublishedDetail id={id} /> : <NotFound />;
+    title = workshop?.title ?? (publishedReference ? "Published workshop" : "Page not found");
   }
   else if (path === "/continue") { page = <GuestPreview />; title = "Guest-flow preview"; }
   else if (path === "/example-plan") { page = <ExamplePlan />; title = "An example host plan"; }
