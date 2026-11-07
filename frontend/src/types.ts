@@ -13,8 +13,8 @@ export interface GuestBooking {
   campaign_id: string;
   workshop_id: string;
   workshop_title: string;
-  state: "CHECKOUT_RESERVED" | "AWAITING_APPROVAL" | "AUTHORIZATION_PENDING" | "AUTHORIZED" | "EXPIRED" | "CANCELLED" | "RELEASE_PENDING" | "VOIDED" | "REVIEW_REQUIRED" | "AUTHORIZATION_FAILED";
-  payment_state: "NOT_STARTED" | "AWAITING_APPROVAL" | "CHECKING" | "AUTHORIZED" | "RELEASE_PENDING" | "VOIDED" | "REVIEW_REQUIRED";
+  state: "CHECKOUT_RESERVED" | "AWAITING_APPROVAL" | "AUTHORIZATION_PENDING" | "AUTHORIZED" | "EXPIRED" | "CANCELLED" | "RELEASE_PENDING" | "VOIDED" | "REVIEW_REQUIRED" | "AUTHORIZATION_FAILED" | "CAPTURE_PENDING" | "PAID" | "REFUND_PENDING" | "REFUNDED";
+  payment_state: "NOT_STARTED" | "AWAITING_APPROVAL" | "CHECKING" | "AUTHORIZED" | "RELEASE_PENDING" | "VOIDED" | "REVIEW_REQUIRED" | "CAPTURE_PENDING" | "PAID" | "REFUND_PENDING" | "REFUNDED";
   amount_minor: number;
   currency: "GBP";
   reservation_expires_at: string;
@@ -25,6 +25,10 @@ export interface GuestBooking {
   can_authorize: boolean;
   can_cancel: boolean;
   updated_at: string;
+  campaign_status?: string;
+  workshop_confirmed?: boolean;
+  captured_minor?: number;
+  refunded_minor?: number;
 }
 
 export interface SessionInfo {
@@ -104,6 +108,27 @@ export interface ViabilityPreview {
   materials_note: string;
 }
 
+export interface SettlementStatus {
+  state: string;
+  decision_result: "COLLECT" | "RELEASE" | "REVIEW_REQUIRED" | null;
+  decision_reason: string | null;
+  frozen_attendance: number | null;
+  admitted_attendance: number;
+  authorized_minor: number;
+  collected_minor: number;
+  refunded_minor: number;
+  capture_pending: number;
+  release_pending: number;
+  refund_pending: number;
+  review_required: boolean;
+  settlement_deadline: string | null;
+  fee_basis: "estimated" | "actual" | "mixed";
+  actual_fees_minor: number | null;
+  estimated_fees_minor: number | null;
+  estimated_surplus_minor: number | null;
+  post_collection_surplus_minor: number | null;
+}
+
 export interface Campaign {
   campaign_id: string;
   workshop_id: string;
@@ -113,6 +138,7 @@ export interface Campaign {
   terms_version: number;
   terms_id: string;
   terms_snapshot_hash: string;
+  settlement?: SettlementStatus | null;
 }
 export interface OfferProvenance {
   offer_snapshot_id: string;

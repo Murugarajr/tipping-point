@@ -26,11 +26,9 @@ Contract decisions verified from those pages:
 - ``Prefer: return=representation`` returns full resources for created
   and authorized orders.
 
-Settlement-phase operations (capture, refund, webhook verification)
-are deliberately NOT implemented in this adapter; they belong to
-later phases. The adapter is domain-agnostic on purpose: binding
-orders to bookings, ownership checks, capacity, and admission
-decisions live in the service layer, which is pending.
+Capture/refund operations use the same sandbox transport and operation-scoped
+request IDs. Webhook verification remains outside this slice. This adapter
+normalizes resources; booking, ownership and settlement policy stay in services.
 """
 
 from __future__ import annotations
@@ -218,6 +216,28 @@ class PayPalAuthorizationSummary:
     status: str
     amount_minor: int | None
     currency: str | None
+
+
+@dataclass(frozen=True)
+class PayPalCapture:
+    capture_id: str
+    status: str
+    amount_minor: int | None
+    currency: str | None
+    authorization_id: str | None
+    order_id: str | None
+    fee_minor: int | None
+    retrieved_at: datetime
+
+
+@dataclass(frozen=True)
+class PayPalRefund:
+    refund_id: str
+    status: str
+    amount_minor: int | None
+    currency: str | None
+    capture_id: str | None
+    retrieved_at: datetime
 
 
 @dataclass(frozen=True)
@@ -504,6 +524,70 @@ def parse_authorization(
         links=_parse_links(payload.get("links")),
         retrieved_at=retrieved_at or datetime.now(timezone.utc),
     )
+
+
+def _related_resource(payload, key, collection):
+    supplementary = payload.get("supplementary_data")
+    related = supplementary.get("related_ids") if isinstance(supplementary, dict) else None
+    direct = _clean_str(related.get(key)) if isinstance(related, dict) else None
+    links = []
+    prefix = f"/v2/payments/{collection}/"
+    for link in _parse_links(payload.get("links")):
+        parts = urlsplit(link.href)
+        if (
+            link.rel == "up" and parts.scheme == "https"
+            and parts.netloc == PAYPAL_SANDBOX_HOST and not parts.query and not parts.fragment
+            and parts.path.startswith(prefix)
+        ):
+            tail = parts.path[len(prefix):]
+            if tail and "/" not in tail and "%" not in tail:
+                links.append(tail)
+    identifiers = set(links + ([direct] if direct else []))
+    if len(identifiers) > 1:
+        raise PayPalResponseError("PayPal resource association was contradictory")
+    return next(iter(identifiers), None)
+
+
+def parse_capture(payload, *, retrieved_at=None):
+    if not isinstance(payload, dict) or not _clean_str(payload.get("id")):
+        raise PayPalResponseError("PayPal capture resource was missing id")
+    money = _parse_money(payload.get("amount"))
+    breakdown = payload.get("seller_receivable_breakdown")
+    fee = _parse_money(breakdown.get("paypal_fee")) if isinstance(breakdown, dict) else None
+    if fee and (not money or fee.currency != money.currency):
+        raise PayPalResponseError("PayPal fee currency did not match capture")
+    supplementary = payload.get("supplementary_data")
+    related = supplementary.get("related_ids") if isinstance(supplementary, dict) else None
+    return PayPalCapture(
+        capture_id=payload["id"].strip(), status=_clean_str(payload.get("status")) or "UNKNOWN",
+        amount_minor=money.amount_minor if money else None, currency=money.currency if money else None,
+        authorization_id=_related_resource(payload, "authorization_id", "authorizations"),
+        order_id=_clean_str(related.get("order_id")) if isinstance(related, dict) else None,
+        fee_minor=fee.amount_minor if fee else None, retrieved_at=retrieved_at or datetime.now(timezone.utc),
+    )
+
+
+def parse_refund(payload, *, retrieved_at=None):
+    if not isinstance(payload, dict) or not _clean_str(payload.get("id")):
+        raise PayPalResponseError("PayPal refund resource was missing id")
+    money = _parse_money(payload.get("amount"))
+    return PayPalRefund(
+        refund_id=payload["id"].strip(), status=_clean_str(payload.get("status")) or "UNKNOWN",
+        amount_minor=money.amount_minor if money else None, currency=money.currency if money else None,
+        capture_id=_related_resource(payload, "capture_id", "captures"),
+        retrieved_at=retrieved_at or datetime.now(timezone.utc),
+    )
+
+
+def build_capture_payload(amount_minor, currency):
+    if isinstance(amount_minor, bool) or not isinstance(amount_minor, int) or amount_minor <= 0:
+        raise ValueError("capture amount must be a positive integer")
+    return {"amount": {"currency_code": currency.strip().upper(), "value": format_minor_to_amount(amount_minor, currency)}, "final_capture": True}
+
+
+def build_refund_payload(amount_minor, currency):
+    body = build_capture_payload(amount_minor, currency)
+    return {"amount": body["amount"]}
 
 
 def build_authorization_order_payload(
@@ -1002,6 +1086,59 @@ class PayPalGateway:
             status=authorization.status,
             retrieved_at=fetched_at,
         )
+
+    async def _settlement_mutation(self, path, body, operation_id, parser, mutation):
+        """One POST only. Services reconcile unknown outcomes; no automatic replay."""
+        _require_operation_id(operation_id)
+        response = await self._request(
+            "POST", path, operation_id=operation_id, mutation=mutation,
+            prefer_representation=True, json_body=body,
+        )
+        self._check_response(response, mutation=mutation, operation_id=operation_id)
+        payload = self._json_payload(response, mutation=mutation, operation_id=operation_id)
+        try:
+            return parser(payload)
+        except PayPalResponseError as exc:
+            error = self._unknown_from_response_error(mutation, operation_id)
+            # Preserve a discovered reference without retaining sensitive raw payloads.
+            resource_id = _clean_str(payload.get("id"))
+            if resource_id:
+                error.resource_id = resource_id
+            raise error from exc
+
+    async def capture_authorization(self, authorization_id, *, amount_minor, currency, operation_id):
+        """Payments v2 capture; full approved amount and final_capture=true."""
+        auth_id = _require_provider_id(authorization_id, "authorization_id")
+        return await self._settlement_mutation(
+            f"{PAYPAL_AUTHORIZATIONS_PATH}/{quote(auth_id, safe='')}/capture",
+            build_capture_payload(amount_minor, currency), operation_id, parse_capture, "capture_authorization",
+        )
+
+    async def get_capture(self, capture_id):
+        capture_id = _require_provider_id(capture_id, "capture_id")
+        response = await self._request("GET", f"/v2/payments/captures/{quote(capture_id, safe='')}")
+        self._check_response(response)
+        result = parse_capture(self._json_payload(response))
+        if result.capture_id != capture_id:
+            raise PayPalResponseError("PayPal returned a different capture")
+        return result
+
+    async def refund_capture(self, capture_id, *, amount_minor, currency, operation_id):
+        """Refund the exact approved capture amount; completion is a resource state."""
+        capture_id = _require_provider_id(capture_id, "capture_id")
+        return await self._settlement_mutation(
+            f"/v2/payments/captures/{quote(capture_id, safe='')}/refund",
+            build_refund_payload(amount_minor, currency), operation_id, parse_refund, "refund_capture",
+        )
+
+    async def get_refund(self, refund_id):
+        refund_id = _require_provider_id(refund_id, "refund_id")
+        response = await self._request("GET", f"/v2/payments/refunds/{quote(refund_id, safe='')}")
+        self._check_response(response)
+        result = parse_refund(self._json_payload(response))
+        if result.refund_id != refund_id:
+            raise PayPalResponseError("PayPal returned a different refund")
+        return result
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client."""

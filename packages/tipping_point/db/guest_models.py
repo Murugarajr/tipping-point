@@ -56,7 +56,7 @@ class Booking(Base):
     __table_args__ = (
         UniqueConstraint("guest_session_id", "idempotency_key", name="uq_bookings_guest_key"),
         CheckConstraint("amount_minor > 0 AND currency = 'GBP'", name="ck_bookings_money"),
-        CheckConstraint("state IN ('CHECKOUT_RESERVED','AWAITING_APPROVAL','AUTHORIZATION_PENDING','AUTHORIZED','EXPIRED','CANCELLED','RELEASE_PENDING','VOIDED','REVIEW_REQUIRED','AUTHORIZATION_FAILED')", name="ck_bookings_state"),
+        CheckConstraint("state IN ('CHECKOUT_RESERVED','AWAITING_APPROVAL','AUTHORIZATION_PENDING','AUTHORIZED','EXPIRED','CANCELLED','RELEASE_PENDING','VOIDED','REVIEW_REQUIRED','AUTHORIZATION_FAILED','CAPTURE_PENDING','PAID','REFUND_PENDING','REFUNDED')", name="ck_bookings_state"),
         Index("ix_bookings_campaign_capacity", "campaign_id", "state", "reservation_expires_at"),
         Index("ix_bookings_guest", "guest_session_id"),
     )
@@ -83,7 +83,7 @@ class PaymentOperation(Base):
 
     __table_args__ = (
         UniqueConstraint("booking_id", "kind", "resource_scope", name="uq_payment_operations_logical"),
-        CheckConstraint("kind IN ('CREATE_ORDER','AUTHORIZE','VOID')", name="ck_payment_operations_kind"),
+        CheckConstraint("kind IN ('CREATE_ORDER','AUTHORIZE','VOID','CAPTURE','REFUND')", name="ck_payment_operations_kind"),
         CheckConstraint("state IN ('PREPARED','IN_FLIGHT','SUCCEEDED','DEFINITIVELY_FAILED','UNKNOWN','PROVIDER_PENDING')", name="ck_payment_operations_state"),
     )
 

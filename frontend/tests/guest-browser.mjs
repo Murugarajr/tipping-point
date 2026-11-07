@@ -243,6 +243,8 @@ try {
   for (const [state, label] of [
     ["AUTHORIZATION_PENDING", "Checking payment"], ["REVIEW_REQUIRED", "Payment status requires review"],
     ["EXPIRED", "Temporary seat expired"], ["VOIDED", "Authorization voided"], ["AUTHORIZATION_FAILED", "Authorization failed"],
+    ["CAPTURE_PENDING", "Collection pending"], ["PAID", "Payment collected · campaign processing"],
+    ["REFUND_PENDING", "Refund processing"], ["REFUNDED", "Payment refunded"],
   ]) {
     booking = { ...booking, state, can_create_order: false, can_authorize: false, can_cancel: false };
     const before = mutations().length;
@@ -251,6 +253,21 @@ try {
     assert.equal(mutations().length, before);
   }
   passed("pending, unknown/review, expired, voided and failed status mounts only read persisted state");
+  booking = { ...initialBooking, state: "PAID", payment_state: "PAID", campaign_status: "CONFIRMED",
+    workshop_confirmed: true, captured_minor: 4805, refunded_minor: 0, can_create_order: false, can_authorize: false, can_cancel: false };
+  const beforeConfirmed = mutations().length;
+  await visit(bookingPath);
+  assert.equal(await evaluate("document.querySelector('h1').innerText"), "Workshop confirmed");
+  assert.equal(mutations().length, beforeConfirmed);
+  booking = { ...booking, campaign_status: "SETTLING", workshop_confirmed: false };
+  await visit(bookingPath);
+  assert.notEqual(await evaluate("document.querySelector('h1').innerText"), "Workshop confirmed");
+  assert.match(await text(), /Campaign processing/);
+  booking = { ...booking, state: "REFUND_PENDING", payment_state: "REFUND_PENDING", campaign_status: "COMPENSATING", captured_minor: 4805 };
+  await visit(bookingPath);
+  assert.match(await text(), /Refund processing/);
+  assert.doesNotMatch(await text(), /Your test payment is authorized, not collected/);
+  passed("collection is distinct from campaign confirmation and pending refunds never imply completion");
   booking = { ...initialBooking, state: "AWAITING_APPROVAL", approve_url: "https://www.sandbox.paypal.com.evil.invalid/x", can_create_order: false };
   await visit(bookingPath);
   assert.match(await text(), /approval link could not be validated/);

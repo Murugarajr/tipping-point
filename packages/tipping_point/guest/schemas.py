@@ -39,11 +39,11 @@ class BookingOut(BaseModel):
     state: Literal[
         "CHECKOUT_RESERVED", "AWAITING_APPROVAL", "AUTHORIZATION_PENDING",
         "AUTHORIZED", "EXPIRED", "CANCELLED", "RELEASE_PENDING", "VOIDED",
-        "REVIEW_REQUIRED", "AUTHORIZATION_FAILED",
+        "REVIEW_REQUIRED", "AUTHORIZATION_FAILED", "CAPTURE_PENDING", "PAID", "REFUND_PENDING", "REFUNDED",
     ]
     payment_state: Literal[
         "NOT_STARTED", "AWAITING_APPROVAL", "CHECKING", "AUTHORIZED",
-        "RELEASE_PENDING", "VOIDED", "REVIEW_REQUIRED",
+        "RELEASE_PENDING", "VOIDED", "REVIEW_REQUIRED", "CAPTURE_PENDING", "PAID", "REFUND_PENDING", "REFUNDED",
     ]
     amount_minor: int
     currency: Literal["GBP"]
@@ -55,3 +55,7 @@ class BookingOut(BaseModel):
     can_authorize: bool
     can_cancel: bool
     updated_at: datetime
+    campaign_status: str = "OPEN"
+    workshop_confirmed: bool = False
+    captured_minor: int = 0
+    refunded_minor: int = 0

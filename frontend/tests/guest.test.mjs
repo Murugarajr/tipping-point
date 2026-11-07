@@ -4,7 +4,8 @@ import { authorizationExplanation, bookingPresentation, bookingStates, sandboxAp
 import * as api from "../src/api.ts";
 
 test("all guest states distinguish authorization, collection, expiry and release", () => {
-  assert.equal(Object.keys(bookingStates).length, 10);
+  assert.equal(Object.keys(bookingStates).length, 14);
+  for (const state of ["CAPTURE_PENDING", "PAID", "REFUND_PENDING", "REFUNDED"]) assert.ok(state in bookingStates);
   assert.match(bookingPresentation("AUTHORIZED").join(" "), /not collected.*does not confirm/);
   assert.match(bookingPresentation("RELEASE_PENDING").join(" "), /not yet confirmed voided/);
   assert.match(bookingPresentation("CANCELLED").join(" "), /does not prove provider cleanup/);

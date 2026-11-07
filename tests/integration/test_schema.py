@@ -190,7 +190,7 @@ def test_migration_head_is_single(owned):
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     heads = script.get_revisions(script.get_heads())
     assert len(heads) == 1
-    assert heads[0].revision == "0005_guest_reservations"
+    assert heads[0].revision == "0006_campaign_settlement"
 
 
 def test_second_upgrade_head_is_harmless(migrated_database):

@@ -51,6 +51,7 @@ class AppSettings(BaseSettings):
     session_ttl_hours: int = 12
     guest_session_ttl_hours: int = Field(default=24, ge=1, le=168)
     authorization_safety_buffer_hours: int = Field(default=6, ge=1, le=24)
+    settlement_timeout_seconds: int = Field(default=1800, ge=60, le=21600)
     paypal_expected_payee: str | None = Field(
         default=None, validation_alias=AliasChoices(
             "PAYPAL_EXPECTED_PAYEE", "TIPPING_POINT_PAYPAL_EXPECTED_PAYEE", "paypal_expected_payee"

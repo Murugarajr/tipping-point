@@ -31,7 +31,7 @@ class OperationClaim:
     payload: dict
 
 
-def validate_order(booking, order, *, expected_order_id=None):
+def validate_order(booking, order, *, expected_order_id=None, allow_failed_captures=False):
     """Strict full-resource validation; sparse/multi-unit resources fail closed."""
     if (
         (expected_order_id and order.provider_order_id != expected_order_id)
@@ -39,7 +39,9 @@ def validate_order(booking, order, *, expected_order_id=None):
         or order.reference_id != str(booking.id)
         or order.amount_minor != booking.amount_minor or order.currency != "GBP"
         or booking.expected_payee not in (order.payee_identifiers or (order.payee_identifier,))
-        or order.captures
+        or (order.captures and not (allow_failed_captures and all(
+            capture.status in ("DECLINED", "DENIED", "FAILED") for capture in order.captures
+        )))
     ):
         raise ValueError("order does not match frozen booking expectations")
 
@@ -79,6 +81,16 @@ class BookingPaymentService:
         self.db = db
         self.settings = settings
         self.gateway = gateway
+
+    def _wake_settlement(self, campaign_id):
+        # Only after observation commit: never invert campaign->booking lock order.
+        from ..settlement.decision import enqueue, schema_available
+        if schema_available(self.db):
+            campaign = self.db.scalar(select(Campaign).where(Campaign.id == campaign_id)
+                                      .with_for_update().execution_options(populate_existing=True))
+            if campaign.status != "OPEN":
+                enqueue(self.db, campaign)
+        self.db.commit()
 
     def _booking(self, booking_id, *, lock=False):
         query = select(Booking).where(Booking.id == booking_id).execution_options(populate_existing=True)
@@ -210,7 +222,7 @@ class BookingPaymentService:
         operation, fenced = self._fenced(claim)
         conflict = self._preserve_order(booking, order, operation)
         if (
-            not fenced and booking.state in ("AUTHORIZED", "VOIDED") and not conflict and valid
+            not fenced and booking.state in ("AUTHORIZED", "VOIDED", "CAPTURE_PENDING", "PAID", "REFUND_PENDING", "REFUNDED") and not conflict and valid
             and all(a.authorization_id == booking.provider_authorization_id for a in order.authorizations)
         ):
             self.db.commit()
@@ -239,6 +251,7 @@ class BookingPaymentService:
                     booking.state = "AWAITING_APPROVAL"
                     booking.approve_url = approve_url
         self.db.commit()
+        self._wake_settlement(booking.campaign_id)
         return fenced and not conflict and valid
 
     def _error(self, claim, error, *, definitive=False):
@@ -401,7 +414,7 @@ class BookingPaymentService:
             validate_authorization_association(booking, authorization)
         except ValueError:
             associated = False
-        if not fenced and associated and booking.state in ("AUTHORIZED", "VOIDED"):
+        if not fenced and associated and booking.state in ("AUTHORIZED", "VOIDED", "CAPTURE_PENDING", "PAID", "REFUND_PENDING", "REFUNDED"):
             self.db.commit()
             return
         try:
@@ -452,16 +465,40 @@ class BookingPaymentService:
             kind="AUTHORIZATION_ADMISSION", details={"authorization_id": auth_id, "admitted": admitted, "fenced": fenced},
         ))
         self.db.commit()
+        self._wake_settlement(campaign.id)
 
     async def cancel(self, booking_id):
+        campaign_id = self.db.scalar(select(Booking.campaign_id).where(Booking.id == booking_id))
+        campaign = self.db.scalar(select(Campaign).where(Campaign.id == campaign_id)
+                                  .with_for_update().execution_options(populate_existing=True))
         booking = self._booking(booking_id, lock=True)
-        if booking.state in ("VOIDED", "CANCELLED"):
+        if booking.state in ("VOIDED", "CANCELLED", "REFUNDED"):
             self.db.commit()
             return self._result(booking_id)
+        from ..settlement.decision import enqueue, schema_available
+        from ..db.models import DecisionCohortMember
+        member = None
+        if schema_available(self.db):
+            member = self.db.scalar(select(DecisionCohortMember).where(DecisionCohortMember.booking_id == booking_id))
+        if member is not None and campaign.status == "CONFIRMED":
+            fail(409, "CONFIRMED_CANCELLATION_REQUIRES_REVIEW", "Confirmed-workshop cancellation requires a separately reviewed policy.")
         booking.cancelled_at = booking.cancelled_at or utcnow()
         operations = list(self.db.scalars(select(PaymentOperation).where(
             PaymentOperation.booking_id == booking_id
         )))
+        if member is not None:
+            if campaign.status == "SETTLING":
+                campaign.status = "ABORTING"
+            enqueue(self.db, campaign)
+            captures = [op for op in operations if op.kind == "CAPTURE"]
+            for op in captures:
+                if op.state == "PREPARED":
+                    op.state = "DEFINITIVELY_FAILED"
+            if (member.capture_id and member.capture_status not in ("DECLINED", "DENIED", "FAILED")) or any(op.state in ("IN_FLIGHT", "UNKNOWN", "PROVIDER_PENDING", "SUCCEEDED") for op in captures):
+                booking.state = "REFUND_PENDING" if member.capture_status == "COMPLETED" else "REVIEW_REQUIRED"
+                self.db.add(BookingEvent(booking_id=booking_id, kind="CANCEL_REQUESTED", details={"settlement_cleanup": True}))
+                self.db.commit()
+                return self._result(booking_id)
         if booking.provider_authorization_id:
             self._queue_release(booking, booking.provider_authorization_id)
             booking.state = "RELEASE_PENDING"
@@ -476,10 +513,18 @@ class BookingPaymentService:
 
     async def reconcile(self, booking_id, known_order_id=None):
         booking = self._booking(booking_id, lock=True)
-        if booking.state in ("AUTHORIZED", "VOIDED"):
+        if booking.state in ("AUTHORIZED", "VOIDED", "CAPTURE_PENDING", "PAID", "REFUND_PENDING", "REFUNDED"):
             # This narrow worker resolves unknown/queued work, not routine
             # external-state auditing. A read retry must not turn a definitive
             # authorization/void back into an in-flight creation operation.
+            self.db.commit()
+            return self._result(booking_id)
+        from ..settlement.decision import schema_available
+        from ..db.models import DecisionCohortMember
+        if schema_available(self.db) and self.db.scalar(select(DecisionCohortMember.id).where(
+            DecisionCohortMember.booking_id == booking_id,
+        )):
+            # Only the campaign saga may reconcile a frozen member's collection.
             self.db.commit()
             return self._result(booking_id)
         active_authorize = self.db.scalar(select(PaymentOperation).where(
@@ -541,6 +586,15 @@ class BookingPaymentService:
     async def release_pending(self, booking_id):
         """Operator-only retrieval-first release of queued, exact resources."""
         booking = self._booking(booking_id)
+        from ..settlement.decision import schema_available
+        from ..db.models import DecisionCohortMember
+        allow_failed_captures = False
+        if schema_available(self.db):
+            member = self.db.scalar(select(DecisionCohortMember).where(DecisionCohortMember.booking_id == booking_id))
+            if member is not None and member.capture_id:
+                allow_failed_captures = member.capture_status in ("DECLINED", "DENIED", "FAILED")
+                if not allow_failed_captures:
+                    fail(409, "CAPTURE_REQUIRES_SETTLEMENT_RECONCILIATION", "Captured resources require settlement reconciliation, not authorization release.")
         queued = list(self.db.scalars(select(PaymentOperation).where(
             PaymentOperation.booking_id == booking_id, PaymentOperation.kind == "VOID",
             PaymentOperation.state != "SUCCEEDED",
@@ -560,7 +614,7 @@ class BookingPaymentService:
                 order = await self.gateway.get_order(release_order_id)
                 self._record_resources(claim, order=order)
                 try:
-                    validate_order(booking, order, expected_order_id=release_order_id)
+                    validate_order(booking, order, expected_order_id=release_order_id, allow_failed_captures=allow_failed_captures)
                     if auth_id not in {a.authorization_id for a in order.authorizations}:
                         raise ValueError("authorization not in validated order")
                 except ValueError as error:

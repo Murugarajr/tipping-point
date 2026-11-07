@@ -126,4 +126,7 @@ def publish_campaign(
     )
     session.add(campaign)
     session.flush()
+    from ..settlement.decision import enqueue, schema_available
+    if schema_available(session):
+        enqueue(session, campaign, purpose="DEADLINE", due_at=campaign.cutoff_at)
     return campaign, True

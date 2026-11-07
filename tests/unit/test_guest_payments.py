@@ -205,7 +205,7 @@ def test_release_retrieves_and_validates_order_before_any_void():
     payload = {"authorization_id": "AUTH", "order_id": "ORDER", "body": {}}
     operation = SimpleNamespace(resource_scope="AUTH", request_payload=payload)
     calls, failures = [], []
-    db = SimpleNamespace(scalars=lambda _: [operation], commit=lambda: None, in_transaction=lambda: False)
+    db = SimpleNamespace(scalar=lambda _: None, scalars=lambda _: [operation], commit=lambda: None, in_transaction=lambda: False)
 
     async def get_order(order_id):
         calls.append(("get_order", order_id))

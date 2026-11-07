@@ -116,6 +116,7 @@ def owned(migrated_database) -> _OwnedRecords:
     """
     from tipping_point.db.models import (
         Campaign,
+        CampaignDecision,
         Booking,
         BookingEvent,
         CampaignTerms,
@@ -124,7 +125,9 @@ def owned(migrated_database) -> _OwnedRecords:
         MerchantCredential,
         MerchantSession,
         GuestSession,
+        DecisionCohortMember,
         PaymentOperation,
+        SettlementWork,
         Workshop,
     )
     from tipping_point.db.session import session_scope
@@ -180,6 +183,14 @@ def owned(migrated_database) -> _OwnedRecords:
                 | (Booking.guest_session_id.in_(registry.guest_sessions))
             )))
         operation_ids = set(registry.payment_operations)
+        if campaign_ids:
+            decision_ids = select(CampaignDecision.id).where(CampaignDecision.campaign_id.in_(campaign_ids))
+            session.execute(delete(DecisionCohortMember).where(DecisionCohortMember.decision_id.in_(decision_ids)))
+            session.flush()
+            session.execute(delete(SettlementWork).where(SettlementWork.campaign_id.in_(campaign_ids)))
+            session.flush()
+            session.execute(delete(CampaignDecision).where(CampaignDecision.campaign_id.in_(campaign_ids)))
+            session.flush()
         if booking_ids:
             operation_ids.update(session.scalars(select(PaymentOperation.id).where(
                 PaymentOperation.booking_id.in_(booking_ids)

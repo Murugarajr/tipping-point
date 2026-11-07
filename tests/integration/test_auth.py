@@ -169,7 +169,7 @@ def test_cookie_settings_local_vs_hosted(owned):
     assert "domain" not in cookie_header  # host-only cookie
 
     # Hosted configuration: Secure cookies, refused if misconfigured.
-    hosted_settings = AppSettings(environment="hosted", cookie_secure=True)
+    hosted_settings = AppSettings(_env_file=None, environment="hosted", cookie_secure=True, public_url="https://testserver")
     hosted_app = create_app(hosted_settings)
     merchant_id, login, password = create_merchant_with_credentials(owned)
     client = TestClient(hosted_app, base_url="https://testserver")
@@ -188,7 +188,7 @@ def test_cookie_settings_local_vs_hosted(owned):
 
     # Hosted without secure cookies must refuse to start.
     try:
-        AppSettings(environment="hosted", cookie_secure=False).validate_startup()
+        AppSettings(_env_file=None, environment="hosted", cookie_secure=False).validate_startup()
     except RuntimeError:
         pass
     else:  # pragma: no cover
@@ -197,6 +197,7 @@ def test_cookie_settings_local_vs_hosted(owned):
     # Local without explicit insecure-dev-cookies opt-in must also refuse.
     try:
         AppSettings(
+            _env_file=None,
             environment="local",
             cookie_secure=False,
             allow_insecure_dev_cookies=False,

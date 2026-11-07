@@ -128,6 +128,27 @@ class WorkshopOut(BaseModel):
     campaign_id: str | None = None
 
 
+class SettlementStatusOut(BaseModel):
+    state: str
+    decision_result: Literal["COLLECT", "RELEASE", "REVIEW_REQUIRED"] | None
+    decision_reason: str | None
+    frozen_attendance: int | None
+    admitted_attendance: int
+    authorized_minor: int
+    collected_minor: int
+    refunded_minor: int
+    capture_pending: int
+    release_pending: int
+    refund_pending: int
+    review_required: bool
+    settlement_deadline: datetime | None
+    fee_basis: Literal["estimated", "actual", "mixed"]
+    actual_fees_minor: int | None
+    estimated_fees_minor: int | None
+    estimated_surplus_minor: int | None
+    post_collection_surplus_minor: int | None
+
+
 class CampaignOut(BaseModel):
     campaign_id: str
     workshop_id: str
@@ -137,6 +158,7 @@ class CampaignOut(BaseModel):
     terms_version: int
     terms_id: str
     terms_snapshot_hash: str
+    settlement: SettlementStatusOut | None = None
 
 
 class WorkshopDetailOut(WorkshopOut):

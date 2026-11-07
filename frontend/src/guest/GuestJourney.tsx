@@ -4,7 +4,7 @@ import * as api from "../api";
 import type { GuestBooking, PublicWorkshop } from "../types";
 import { navigate } from "../navigation";
 import { displayDate, money } from "../host/model";
-import { authorizationExplanation, bookingPresentation, sandboxApproveUrl } from "./model";
+import { authorizationExplanation, campaignStatusMessage, guestSettlementPresentation, sandboxApproveUrl } from "./model";
 import "./guest.css";
 
 function failure(cause: unknown): string {
@@ -94,15 +94,18 @@ export function GuestBookingStatus({ id, suffix }: { id: string; suffix?: "retur
     catch (cause) { handleError(cause); }
     finally { inFlight.current = false; setBusy(false); }
   };
-  const presentation = booking && bookingPresentation(booking.state);
+  const presentation = booking && guestSettlementPresentation(booking);
   const approve = booking && sandboxApproveUrl(booking.approve_url);
+  const settlementPayment = booking && ["CAPTURE_PENDING", "PAID", "REFUND_PENDING", "REFUNDED"].includes(booking.state);
   return <section className="section guest-status-page"><p className="kicker">Private guest reservation · Sandbox</p>
     <h1>{lost ? "Reservation access unavailable." : presentation?.[0] ?? "Reservation status"}</h1>
-    {suffix && <p className="preview-callout">{suffix === "return" ? "Returned from PayPal. This link is not proof of approval or authorization. The saved backend status below is authoritative; payment checks happen only on explicit action." : "Returned from PayPal cancellation. No cancellation or financial cleanup has been performed by opening this page."}</p>}
+    {suffix && <p className="preview-callout">{suffix === "return" ? "Returned from PayPal. This link is not proof of approval or authorization. The saved backend status below is authoritative. Opening this page does not execute financial operations; deadline processing runs independently." : "Returned from PayPal cancellation. No cancellation or financial cleanup has been performed by opening this page."}</p>}
     {lost ? <div className="preview-callout"><p>This booking is unavailable to the current guest session. The cookie may be lost or expired, or the reservation may belong to another guest. We cannot restore private bookings by email.</p><a className="text-link" href="/workshops">Browse public workshops</a></div> : <>
       {error && <p className="form-error" role="alert">{error}</p>}
       {!booking && !error && <p role="status">Retrieving your saved reservation…</p>}
-      {booking && <div className="guest-status-card"><h2>{booking.workshop_title}</h2><p className="large-copy">{money(booking.amount_minor)} · one place · {booking.currency}</p><p>{presentation?.[1]}</p><p>{booking.notice}</p>{booking.notice !== authorizationExplanation && <p>{authorizationExplanation}</p>}
+      {booking && <div className="guest-status-card"><h2>{booking.workshop_title}</h2><p className="large-copy">{money(booking.amount_minor)} · one place · {booking.currency}</p><p>{presentation?.[1]}</p><p>{booking.notice}</p>{!settlementPayment && booking.notice !== authorizationExplanation && <p>{authorizationExplanation}</p>}
+        {campaignStatusMessage(booking.campaign_status) && <p className="preview-callout">{campaignStatusMessage(booking.campaign_status)}</p>}
+        {settlementPayment && <p>Verified collected: {money(booking.captured_minor ?? 0)} · Verified refunded: {money(booking.refunded_minor ?? 0)}. Pending amounts are not counted as completed.</p>}
         <dl className="detail-facts"><div><dt>Seat currently held</dt><dd>{booking.seat_held ? "Yes, according to saved server status" : "No"}</dd></div><div><dt>Temporary reservation expires · London time</dt><dd>{displayDate(booking.reservation_expires_at)}</dd></div><div><dt>Saved payment state</dt><dd>{booking.payment_state}</dd></div><div><dt>Last saved update · London time</dt><dd>{displayDate(booking.updated_at)}</dd></div></dl>
         <div className="guest-actions">
           {booking.can_create_order && <button className="tp-button" disabled={busy} onClick={() => void mutate(api.createGuestOrder)}>Create PayPal Sandbox order</button>}
@@ -114,6 +117,6 @@ export function GuestBookingStatus({ id, suffix }: { id: string; suffix?: "retur
       </div>}
     </>}
     <button className="tp-button tp-button-secondary" disabled={busy} onClick={() => void load()}>{busy ? "Checking saved status…" : "Refresh saved status"}</button>
-    <p className="small-copy">Refreshing only reads saved server state; it does not contact PayPal or authorize a payment. Keep this guest session cookie to retain access. No email has been sent by this page.</p>
+    <p className="small-copy">Refreshing only reads saved server state; it does not contact PayPal or execute a payment operation. Background settlement is independent of this page. Keep this guest session cookie to retain access. No email has been sent by this page.</p>
   </section>;
 }

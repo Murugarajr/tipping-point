@@ -40,7 +40,7 @@ def guest_schema_available(db):
 
 def capacity_predicate(now):
     return or_(
-        and_(Booking.admitted_at.is_not(None), Booking.state != "VOIDED"),
+        and_(Booking.admitted_at.is_not(None), Booking.state.notin_(("VOIDED", "REFUNDED"))),
         and_(Booking.state.in_(HOLD_STATES), Booking.cancelled_at.is_(None),
              Booking.reservation_expires_at > now),
     )
@@ -173,16 +173,26 @@ class BookingService:
             "AUTHORIZATION_PENDING": "CHECKING", "AUTHORIZED": "AUTHORIZED",
             "RELEASE_PENDING": "RELEASE_PENDING", "VOIDED": "VOIDED",
             "REVIEW_REQUIRED": "REVIEW_REQUIRED",
+            "CAPTURE_PENDING": "CAPTURE_PENDING", "PAID": "PAID",
+            "REFUND_PENDING": "REFUND_PENDING", "REFUNDED": "REFUNDED",
         }.get(state, "NOT_STARTED")
+        from ..settlement.projections import guest_projection
+        settlement = guest_projection(self.db, booking, campaign)
         return BookingOut(
             booking_id=booking.id, campaign_id=campaign.id, workshop_id=workshop.id,
             workshop_title=workshop.title, state=state, payment_state=payment,
             amount_minor=booking.amount_minor, currency=booking.currency,
             reservation_expires_at=booking.reservation_expires_at,
-            seat_held=(booking.admitted_at is not None and state != "VOIDED") or (live and state in HOLD_STATES),
+            seat_held=(booking.admitted_at is not None and state not in ("VOIDED", "REFUNDED")) or (live and state in HOLD_STATES),
             approve_url=booking.approve_url if live and state == "AWAITING_APPROVAL" else None,
-            notice=NOTICE, can_create_order=live and state == "CHECKOUT_RESERVED",
+            notice={
+                "CAPTURE_PENDING": "Sandbox collection is pending or being checked; no completed collection or workshop confirmation is assumed.",
+                "PAID": "Sandbox payment collection was verified. Workshop confirmation depends on the saved campaign settlement state.",
+                "REFUND_PENDING": "Sandbox refund processing or reconciliation is pending. No instant refund or completed cleanup is promised.",
+                "REFUNDED": "The full Sandbox refund was verified. This reservation is not a confirmed workshop place.",
+            }.get(state, NOTICE), can_create_order=live and state == "CHECKOUT_RESERVED",
             can_authorize=live and state == "AWAITING_APPROVAL",
-            can_cancel=state not in ("VOIDED", "CANCELLED", "EXPIRED"),
+            can_cancel=state not in ("VOIDED", "CANCELLED", "EXPIRED", "REFUNDED", "REFUND_PENDING") and booking.cancelled_at is None and campaign.status != "CONFIRMED",
             updated_at=booking.updated_at,
+            **settlement,
         )

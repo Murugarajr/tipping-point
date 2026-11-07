@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .engine import Base
 from .guest_models import Booking, BookingEvent, GuestSession, PaymentOperation
+from .settlement_models import CampaignDecision, DecisionCohortMember, SettlementWork
 
 
 def _utcnow() -> datetime:

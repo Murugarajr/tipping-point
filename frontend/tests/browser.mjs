@@ -209,6 +209,7 @@ try {
     await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   }
   async function visit(path) {
+    console.log(`Checking browser route ${path}`);
     await cdp("Page.navigate", { url: base + path });
     await until(() => evaluate("document.readyState === 'complete' && !!document.querySelector('#root h1')"), path);
     await sleep(150);

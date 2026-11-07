@@ -34,6 +34,7 @@ from ..channel3 import (
 )
 from ..db.models import Campaign, CampaignTerms, MaterialOfferSnapshot, Workshop
 from ..db.session import SessionLocal
+from ..settlement.projections import campaign_projection
 from ..economics import (
     AlreadyPublishedError,
     CampaignFinancialsInput,
@@ -213,6 +214,7 @@ def get_workshop(
             status=campaign.status, capacity=campaign.capacity,
             cutoff_at=campaign.cutoff_at, terms_version=campaign.terms_version,
             terms_id=str(terms.id), terms_snapshot_hash=terms.snapshot_hash,
+            settlement=campaign_projection(db, campaign),
         ) if campaign is not None else None,
         offer_stale_after_seconds=request.app.state.settings.channel3_offer_stale_after_seconds,
     )
@@ -373,4 +375,5 @@ def publish_workshop(
         terms_version=campaign.terms_version,
         terms_id=str(campaign.terms_id),
         terms_snapshot_hash=terms.snapshot_hash,
+        settlement=campaign_projection(db, campaign),
     )
