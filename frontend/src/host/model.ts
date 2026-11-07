@@ -50,6 +50,22 @@ export function draftFromDetail(detail: WorkshopDetail): DraftPayload {
     schedule: { opens_at: detail.opens_at ? localDate(detail.opens_at) : "", closes_at: detail.closes_at ? localDate(detail.closes_at) : "" },
   };
 }
+/**
+ * datetime-local values carry no UTC offset. During a clock change a wall time can be
+ * repeated (two instants) or skipped (no instant); either would be saved as a silently
+ * shifted instant. Detect both so the editor can refuse to save instead of guessing.
+ */
+export function clockChangeIssue(value: string): "ambiguous" | "nonexistent" | null {
+  const instant = new Date(value).getTime();
+  if (!value || !Number.isFinite(instant)) return null;
+  const normalized = value.length === 16 ? `${value}:00.000` : value.length === 19 ? `${value}.000` : value;
+  if (localDate(new Date(instant)) !== normalized) return "nonexistent";
+  for (const shift of [-3_600_000, -1_800_000, 1_800_000, 3_600_000]) {
+    if (localDate(new Date(instant + shift)) === normalized) return "ambiguous";
+  }
+  return null;
+}
+
 export function payloadForSave(draft: DraftPayload): DraftPayload {
   return { ...draft, title: draft.title.trim(), schedule: {
     opens_at: new Date(draft.schedule.opens_at).toISOString(), closes_at: new Date(draft.schedule.closes_at).toISOString(),
@@ -83,6 +99,59 @@ export function materialIsSaved(line: MaterialInput, detail: WorkshopDetail | nu
 }
 export function draftDateLabel(value: string): string {
   return value && Number.isFinite(new Date(value).getTime()) ? displayDate(new Date(value).toISOString()) : "Not set";
+}
+
+/** Local Sandbox test preset. Computed from the click instant (never module load); fills draft inputs only. */
+export function sandboxShortWindow(clickedAt: Date): DraftPayload["schedule"] {
+  const instant = clickedAt.getTime();
+  if (!Number.isFinite(instant)) throw new Error("invalid preset instant");
+  return { opens_at: localDate(new Date(instant - 60_000)), closes_at: localDate(new Date(instant + 15 * 60_000)) };
+}
+
+const londonDay = (value: Date) => new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
+}).format(value);
+const londonTime = (value: Date) => new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short",
+}).format(value);
+const shiftDay = (day: string, days: number) => {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+
+export function formatDuration(ms: number): string {
+  const total = Math.round(Math.abs(ms) / 1000);
+  const days = Math.floor(total / 86400), hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60), seconds = total % 60;
+  const parts = [days && `${days} day${days === 1 ? "" : "s"}`, hours && `${hours} h`, minutes && `${minutes} min`,
+    !days && !hours && seconds && `${seconds} s`].filter(Boolean);
+  return parts.length ? parts.join(" ") : "0 s";
+}
+
+/** "today", "tomorrow", "yesterday", or an explicit date, by London calendar day. */
+export function relativeDay(target: Date, now: Date): string {
+  const day = londonDay(target), today = londonDay(now);
+  if (day === today) return "today";
+  if (day === shiftDay(today, 1)) return "tomorrow";
+  if (day === shiftDay(today, -1)) return "yesterday";
+  return `on ${new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(target)}`;
+}
+
+export interface ScheduleSummary { opens: string; closes: string; opensPhrase: string; closesPhrase: string; duration: string; remaining: string }
+
+/** Human-readable cross-check of the exact instants the draft will send; null when either field is not a valid date. */
+export function scheduleSummary(schedule: DraftPayload["schedule"], now: Date): ScheduleSummary | null {
+  const opens = new Date(schedule.opens_at), closes = new Date(schedule.closes_at);
+  if (!schedule.opens_at || !schedule.closes_at || !Number.isFinite(opens.getTime()) || !Number.isFinite(closes.getTime())) return null;
+  const left = closes.getTime() - now.getTime();
+  return {
+    opens: displayDate(opens.toISOString()), closes: displayDate(closes.toISOString()),
+    opensPhrase: `${opens.getTime() <= now.getTime() ? "Opened" : "Opens"} ${relativeDay(opens, now)} at ${londonTime(opens)}`,
+    closesPhrase: `${left <= 0 ? "Closed" : "Closes"} ${relativeDay(closes, now)} at ${londonTime(closes)}`,
+    duration: closes.getTime() > opens.getTime() ? formatDuration(closes.getTime() - opens.getTime()) : "Invalid: cutoff is not after opening",
+    remaining: left > 0 ? `${formatDuration(left)} until cutoff` : "Cutoff has passed",
+  };
 }
 
 /** Headline never shows completed cleanup or confirmation that the saved state does not support. */

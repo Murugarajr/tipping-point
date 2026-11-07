@@ -236,3 +236,43 @@ def test_infeasible_or_incomplete_draft_cannot_publish(owned):
             )
         ).all()
         assert rows == []
+
+def test_short_sandbox_window_dates_survive_save_reload_publish_and_campaign(owned):
+    """Editor-style millisecond instants: save -> persisted draft -> detail -> publish -> campaign cutoff."""
+    client, info = logged_in_client(owned)
+    csrf = info["csrf"]
+    clicked = datetime.now(timezone.utc).replace(microsecond=598000)
+    opens, closes = clicked - timedelta(minutes=1), clicked + timedelta(minutes=15)
+    # The frontend sends Date.toISOString() spellings (UTC, millisecond precision, "Z").
+    spell = lambda value: value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    body = viable_workshop_body(ticket_price_minor=100, capacity=1, fixed_costs_minor=0)
+    body["financials"].update(minimum_operating_attendance=1, materials=[], contingency_minor=0,
+                              fee_estimate={"percent_basis_points": 0, "fixed_minor": 50,
+                                            "label": "application test assumption"})
+    body["schedule"] = {"opens_at": spell(opens), "closes_at": spell(closes)}
+    created = client.post("/api/merchant/workshops", json=body, headers={"X-CSRF-Token": csrf})
+    assert created.status_code == 201, created.text
+    wid = created.json()["workshop_id"]
+
+    def instants(payload):
+        return datetime.fromisoformat(payload["opens_at"]), datetime.fromisoformat(payload["closes_at"])
+
+    assert instants(created.json()) == (opens, closes)
+    # A resave of the reloaded values (draftFromDetail -> payloadForSave) is stable.
+    body["schedule"] = {"opens_at": spell(opens), "closes_at": spell(closes)}
+    resaved = client.patch(f"/api/merchant/workshops/{wid}", json=body, headers={"X-CSRF-Token": csrf})
+    assert resaved.status_code == 200, resaved.text
+    detail = client.get(f"/api/merchant/workshops/{wid}")
+    assert detail.status_code == 200 and instants(detail.json()) == (opens, closes)
+    preview = client.post(f"/api/merchant/workshops/{wid}/preview", headers={"X-CSRF-Token": csrf})
+    assert preview.status_code == 200, preview.text
+    published = client.post(f"/api/merchant/workshops/{wid}/publish", headers={"X-CSRF-Token": csrf})
+    assert published.status_code == 201, published.text
+    assert datetime.fromisoformat(published.json()["cutoff_at"]) == closes
+    with SessionLocal() as session:
+        campaign = session.get(Campaign, published.json()["campaign_id"])
+        terms = session.get(CampaignTerms, campaign.terms_id)
+        assert (terms.opens_at, terms.closes_at, campaign.cutoff_at) == (opens, closes, closes)
+        assert campaign.cutoff_at - terms.opens_at == timedelta(minutes=16)
+    frozen = client.get(f"/api/merchant/workshops/{wid}")
+    assert frozen.json()["is_frozen"] and instants(frozen.json()) == (opens, closes)

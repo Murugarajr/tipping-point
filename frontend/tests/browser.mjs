@@ -538,6 +538,20 @@ try {
   await setField("Booking cutoff", validClose);
   await click(".workbench .host-page-heading .host-button");
   await until(() => evaluate("/^(All changes saved|Saved on the server[.])$/.test(document.querySelector('.workbench-status [role=status]')?.innerText ?? '')"), "booking dates saved");
+  {
+    // Editor values -> exact save-request instants -> persisted fixture -> reloaded editor values.
+    const editorValues = JSON.parse(await evaluate("JSON.stringify([...document.querySelectorAll('[data-section=basics] input[type=datetime-local]')].map((input) => input.value))"));
+    const expectedIso = JSON.parse(await evaluate(`JSON.stringify(${JSON.stringify(editorValues)}.map((value) => new Date(value).toISOString()))`));
+    const lastWrite = apiCalls.filter((item) => item.path.startsWith("/api/merchant/workshops") && ["POST", "PATCH"].includes(item.method) && item.body?.includes("schedule")).at(-1);
+    const sent = JSON.parse(lastWrite.body).schedule;
+    assert.deepEqual([sent.opens_at, sent.closes_at], expectedIso);
+    assert.deepEqual([workshop.opens_at, workshop.closes_at], expectedIso);
+    assert.match(await evaluate("document.querySelector('[data-section=basics] .schedule-summary').innerText"), /Booking cutoff · London time[\s\S]*Closes (today|tomorrow|on .+) at \d{2}:\d{2}:\d{2} (GMT|BST)/);
+    assert.match(await evaluate("document.querySelector('[data-section=basics] .schedule-summary').innerText"), /Time remaining until cutoff[\s\S]*until cutoff/);
+    assert.match(await evaluate("document.querySelector('[data-section=review] .schedule-summary').innerText"), /Booking window duration/);
+    assert.equal(await evaluate("!!document.querySelector('.sandbox-preset')"), false, "production bundle never offers the local Sandbox preset");
+    passed("booking dates survive editor → save request → persisted draft; summaries render; no Sandbox preset in production bundle");
+  }
   await click(".workbench-tabs button:nth-child(4)");
   assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').disabled"), true);
   failPreview = true;

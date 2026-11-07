@@ -456,3 +456,62 @@ A read-only handoff inspection on 2026-11-07 also observed `tipping_point_dev` a
 Development is therefore now at `0006`. This entry clarifies the record; it does not rewrite the earlier `0005` report.
 
 The Sandbox operator-test cleanup added on 2026-11-07 has been verified offline only. That means MockTransport against `tipping_point_test`. No development-database mutation and no real capture or refund were performed.
+
+## 9. PayPal Sandbox GBP 1.00 capture and cleanup refund completed (2026-11-07)
+
+**Attribution:** operator commands were executed by the agent. Each financial step had a separate explicit user approval and ran against `tipping_point_dev` (role `tipping_point_app`, not superuser, revision `0006`) in PayPal Sandbox only. Provider and resource identifiers, timestamps, request IDs and hashes are kept in the Git-ignored record `.private/settlement/checkpoint-20261107T2151-capture-refund/evidence.json`. This summary omits credentials, payer details and callback query parameters.
+
+This supersedes, for later events, the closing note of section 8 that no real capture or refund had been performed.
+
+Sequence for one single-booking test campaign with a 16-minute booking window, created with the local Sandbox preset:
+
+1. **Authorization.** One guest booking was authorized for GBP 1.00.
+2. **Capture and confirmation.** After the cutoff and inside the 30-minute collection window, the exact-campaign settlement run did three things:
+   - froze a `COLLECT` decision (attendance 1 viable);
+   - captured GBP 1.00 once;
+   - confirmed the campaign.
+3. **Cleanup refund.** The approved Sandbox operator-test cleanup moved the campaign to `COMPENSATING` and the booking to `REFUND_PENDING`. It then issued one full refund. PayPal returned the refund as `COMPLETED` for GBP 1.00.
+4. **Parser failure.** PayPal Sandbox returned the refund's `up` link on `api.sandbox.paypal.com`. The response parser accepted only `api-m.sandbox.paypal.com`, so the refund-to-capture linkage parsed as missing. The ownership check then failed closed:
+   - the operation was left `UNKNOWN`;
+   - the review reason was `REFUND_OUTCOME_UNKNOWN`;
+   - no further mutation was attempted.
+
+   Read-only retrieval confirmed the refund was `COMPLETED` and linked to the capture.
+5. **Fix.** The related-link parser now accepts exactly those two Sandbox hosts, for parsing only. Every other constraint is still enforced: HTTPS, exact host, no userinfo or port, `up` relation, expected resource path and ID shape. Outbound requests remain pinned to `api-m.sandbox.paypal.com`. Ownership validation is unchanged.
+
+   New offline tests are `tests/unit/test_paypal_related_links.py` and `tests/integration/test_sandbox_cleanup_recovery.py`. The recovery tests reproduce the stuck state through the real cleanup path.
+6. **Recovery.** Re-running the same scoped cleanup command reused the existing refund operation for retrieval only and finalized through the normal path.
+
+Final persisted state:
+
+- Campaign `CANCELLED`.
+- Booking `REFUNDED`.
+- Refund operation `SUCCEEDED`, with its original operation ID, request ID, payload and hash.
+- Cleanup work `DONE`, with no claim or lease.
+- Review flag cleared by normal finalization, with history `REFUND_OUTCOME_UNKNOWN` then resolved.
+- Original error, confirmation, capture and recovery evidence preserved.
+- Exactly **one logical capture** and **one logical refund** operation.
+
+| Money (GBP) | Amount |
+|---|---|
+| Captured | 1.00 |
+| Refunded | 1.00 |
+| Net collected | **0.00** |
+| Actual PayPal fee reported on the capture | 0.23 |
+| Conservative fee allowance used by policy | 0.50 |
+| Policy surplus at confirmation (not audited profit) | 0.50 |
+
+PayPal did not deduct GBP 0.50; that figure is the policy's allowance.
+
+**Evidence limits:**
+
+- **Fee return.** It is not established that the original capture fee was returned. The refund response reports only its own breakdown, with a fee of 0.00 on the refund.
+- **GET-only recovery.** The recovery's GET-only financial behaviour is supported by two things: the tested code path, where an `UNKNOWN` operation can only be claimed for retrieval and the refund POST runs only on a fresh claim, and the ledger, which shows no new operation and one version increment. Network traffic of the live recovery run was **not** captured.
+
+Known issue, unchanged: `bookings.provider_status` still reads `CREATED` after capture and refund. The field is written but never read; a fix is deferred and nothing was altered manually.
+
+Preservation:
+
+- Unrelated campaigns, work rows and an abandoned unrelated `PREPARED` authorize operation were left unchanged.
+- No other campaign was processed.
+- No void, capture or authorization occurred beyond those listed above.

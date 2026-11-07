@@ -34,6 +34,7 @@ normalizes resources; booking, ownership and settlement policy stay in services.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -48,6 +49,11 @@ if TYPE_CHECKING:
 
 PAYPAL_SANDBOX_HOST = "api-m.sandbox.paypal.com"
 PAYPAL_SANDBOX_BASE_URL = f"https://{PAYPAL_SANDBOX_HOST}"
+# Hosts PayPal Sandbox uses in *returned* HATEOAS links (observed 2026-11-07:
+# refund/capture "up" links on api.sandbox.paypal.com). Parse-only allowlist,
+# exact match; it never changes the pinned outbound base URL above.
+PAYPAL_SANDBOX_LINK_HOSTS = frozenset({"api.sandbox.paypal.com", PAYPAL_SANDBOX_HOST})
+_LINKED_RESOURCE_ID = re.compile(r"[A-Za-z0-9-]{1,100}")
 PAYPAL_TOKEN_PATH = "/v1/oauth2/token"
 PAYPAL_ORDERS_PATH = "/v2/checkout/orders"
 PAYPAL_AUTHORIZATIONS_PATH = "/v2/payments/authorizations"
@@ -526,22 +532,43 @@ def parse_authorization(
     )
 
 
+def _related_link_id(link: PayPalLink, collection: str) -> str | None:
+    """Parse-only: the identifier named by a trusted Sandbox ``up`` link, else ``None``.
+
+    The URL is never fetched. Outbound requests stay pinned to
+    ``PAYPAL_SANDBOX_BASE_URL``; a matching link only names a related
+    resource ID that callers must still validate against frozen state.
+    """
+    if link.rel != "up" or (link.method is not None and link.method != "GET"):
+        return None
+    try:
+        parts = urlsplit(link.href)
+        port = parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme != "https" or parts.netloc not in PAYPAL_SANDBOX_LINK_HOSTS
+        or parts.hostname not in PAYPAL_SANDBOX_LINK_HOSTS or port is not None
+        or parts.username is not None or parts.password is not None
+        or parts.query or parts.fragment or "?" in link.href or "#" in link.href
+    ):
+        return None
+    prefix = f"/v2/payments/{collection}/"
+    if not parts.path.startswith(prefix):
+        return None
+    tail = parts.path[len(prefix):]
+    return tail if _LINKED_RESOURCE_ID.fullmatch(tail) else None
+
+
 def _related_resource(payload, key, collection):
     supplementary = payload.get("supplementary_data")
     related = supplementary.get("related_ids") if isinstance(supplementary, dict) else None
     direct = _clean_str(related.get(key)) if isinstance(related, dict) else None
     links = []
-    prefix = f"/v2/payments/{collection}/"
     for link in _parse_links(payload.get("links")):
-        parts = urlsplit(link.href)
-        if (
-            link.rel == "up" and parts.scheme == "https"
-            and parts.netloc == PAYPAL_SANDBOX_HOST and not parts.query and not parts.fragment
-            and parts.path.startswith(prefix)
-        ):
-            tail = parts.path[len(prefix):]
-            if tail and "/" not in tail and "%" not in tail:
-                links.append(tail)
+        linked = _related_link_id(link, collection)
+        if linked is not None:
+            links.append(linked)
     identifiers = set(links + ([direct] if direct else []))
     if len(identifiers) > 1:
         raise PayPalResponseError("PayPal resource association was contradictory")
