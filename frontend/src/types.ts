@@ -66,6 +66,8 @@ export interface AttendancePoint {
 }
 
 export interface ViabilityPreview {
+  terms_version: number;
+  terms_snapshot_hash: string;
   algorithm_version: string;
   currency: "GBP";
   ticket_price_minor: number;
@@ -101,6 +103,7 @@ export interface OfferProvenance {
   review_notes: string | null;
 }
 export interface WorkshopDetail extends Workshop {
+  terms_snapshot_hash: string;
   financials: Omit<DraftPayload["financials"], "materials"> & {
     materials: (MaterialInput & { offer_provenance: OfferProvenance | null })[];
   };

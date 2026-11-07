@@ -60,6 +60,9 @@
 .workbench-summary > p:not(.host-kicker) { color: var(--tp-muted); font-size: 1rem; }
 .workbench-summary > .host-button { margin-top: 16px; width: 100%; }
 .host-helper { color: var(--tp-muted); font-size: 1rem; line-height: 1.6; margin: 12px 0 20px; }
+.workflow-prerequisites .host-button, .provider-prerequisites .host-button { margin-top: 12px; }
+.workflow-prerequisites .host-text-button, .provider-prerequisites .host-text-button { margin-right: 16px; }
+.material-save-state { display: block; color: var(--tp-muted); font-size: .875rem; margin-top: 8px; }
 .host-shell label { font-size: 1rem; font-weight: 500; margin: 16px 0; }
 .host-shell input, .host-shell textarea, .host-shell select { border-radius: 8px; background: white; font-size: 1rem; min-height: 48px; border-color: #aeb5a8; color: var(--tp-ink); }
 .host-shell input:focus, .host-shell textarea:focus, .host-shell select:focus { outline: 2px solid var(--tp-blue); outline-offset: 2px; border-color: var(--tp-blue); }

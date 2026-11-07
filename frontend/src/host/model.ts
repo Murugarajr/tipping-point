@@ -1,4 +1,4 @@
-import type { DraftPayload, WorkshopDetail } from "../types";
+import type { DraftPayload, MaterialInput, ViabilityPreview, WorkshopDetail } from "../types";
 
 export const sections = ["basics", "materials", "economics", "review"] as const;
 export type Section = typeof sections[number];
@@ -54,4 +54,33 @@ export function payloadForSave(draft: DraftPayload): DraftPayload {
   return { ...draft, title: draft.title.trim(), schedule: {
     opens_at: new Date(draft.schedule.opens_at).toISOString(), closes_at: new Date(draft.schedule.closes_at).toISOString(),
   } };
+}
+
+export const firstViableLabel = (preview: ViabilityPreview | null) =>
+  preview ? preview.first_viable_attendance ?? "None" : "Not calculated";
+
+// Advisory completeness only; the backend is the publication authority.
+export function publicationSetupIssues(detail: WorkshopDetail | null): string[] {
+  if (!detail) return ["Save the draft before publishing."];
+  const issues: string[] = [];
+  if (!detail.title.trim()) issues.push("Add a workshop title in Basics.");
+  if (detail.financials.ticket_price_minor <= 0) issues.push("Set a ticket price above £0.00 in Basics.");
+  if (!detail.financials.fee_estimate) issues.push("Add and review explicit fee assumptions in Economics.");
+  if (!detail.opens_at || !detail.closes_at) issues.push("Add booking dates in Basics.");
+  return issues;
+}
+export function savedTermsKey(detail: WorkshopDetail | null): string | null {
+  return detail?.terms_snapshot_hash ? `${detail.workshop_id}:${detail.terms_version}:${detail.terms_snapshot_hash}` : null;
+}
+export function previewMatchesSaved(detail: WorkshopDetail | null, preview: ViabilityPreview | null): boolean {
+  return Boolean(savedTermsKey(detail) && preview
+    && preview.terms_version === detail!.terms_version
+    && preview.terms_snapshot_hash === detail!.terms_snapshot_hash);
+}
+export function materialIsSaved(line: MaterialInput, detail: WorkshopDetail | null): boolean {
+  const saved = detail ? draftFromDetail(detail).financials.materials.find((item) => item.name === line.name) : null;
+  return Boolean(saved && JSON.stringify(saved) === JSON.stringify(line));
+}
+export function draftDateLabel(value: string): string {
+  return value && Number.isFinite(new Date(value).getTime()) ? displayDate(new Date(value).toISOString()) : "Not set";
 }

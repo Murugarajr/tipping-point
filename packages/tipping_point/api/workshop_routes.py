@@ -61,6 +61,7 @@ from .schemas import (
     WorkshopOut,
     WorkshopDetailOut,
     MerchantFinancialsInput,
+    PublishReviewRequest,
 )
 
 router = APIRouter(prefix="/api/merchant")
@@ -206,6 +207,7 @@ def get_workshop(
     return WorkshopDetailOut(
         **_workshop_out(db, workshop).model_dump(),
         financials=CampaignFinancialsInput.model_validate(terms.financial_inputs),
+        terms_snapshot_hash=terms.snapshot_hash,
         campaign=CampaignOut(
             campaign_id=str(campaign.id), workshop_id=str(workshop.id),
             status=campaign.status, capacity=campaign.capacity,
@@ -286,6 +288,8 @@ def preview_workshop(
     )
     return ViabilityPreviewOut(
         algorithm_version=report.algorithm_version,
+        terms_version=terms.version,
+        terms_snapshot_hash=terms.snapshot_hash,
         currency=report.currency,
         ticket_price_minor=report.ticket_price_minor,
         capacity=report.capacity,
@@ -318,6 +322,7 @@ def publish_workshop(
     response: Response,
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
+    payload: PublishReviewRequest | None = None,
 ) -> CampaignOut:
     """Publish: freeze terms and open the campaign in one transaction.
 
@@ -326,6 +331,18 @@ def publish_workshop(
     capability is explicitly unavailable in this slice.
     """
     require_csrf(request, auth)
+    if payload is not None:
+        _owned_workshop(db, auth.merchant.id, workshop_id, for_update=True)
+        current = _latest_terms(db, workshop_id)
+        db.refresh(current)
+        if (
+            current.version != payload.expected_terms_version
+            or current.snapshot_hash != payload.expected_terms_snapshot_hash
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="saved terms changed after review; reload the workshop, run a new preview and acknowledge the current terms",
+            )
     try:
         campaign, created = publish_campaign(
             db,

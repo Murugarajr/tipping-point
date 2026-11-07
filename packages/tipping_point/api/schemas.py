@@ -98,6 +98,8 @@ class ViabilityPreviewOut(BaseModel):
     """Preview result; surpluses are ESTIMATES, never audited profit."""
 
     algorithm_version: str
+    terms_version: int
+    terms_snapshot_hash: str
     currency: str
     ticket_price_minor: int
     capacity: int
@@ -141,8 +143,17 @@ class WorkshopDetailOut(WorkshopOut):
     """Private owner-only saved inputs; never a public endpoint response."""
 
     financials: CampaignFinancialsInput
+    terms_snapshot_hash: str
     campaign: CampaignOut | None
     offer_stale_after_seconds: int
+
+
+class PublishReviewRequest(BaseModel):
+    """Expected saved terms reviewed by the browser, not financial authority."""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_terms_version: int = Field(ge=1)
+    expected_terms_snapshot_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class PublicWorkshopOut(BaseModel):

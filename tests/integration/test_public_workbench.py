@@ -188,3 +188,40 @@ def test_published_projection_does_not_read_newer_private_terms(owned):
     public = TestClient(app).get(f"/api/workshops/{wid}").json()
     assert public["ticket_price_minor"] == 5000
     assert public["campaign_id"] == campaign["campaign_id"]
+
+def test_preview_and_reviewed_publication_bind_current_saved_hash(owned):
+    client, info = logged_in_client(owned)
+    other, other_info = logged_in_client(owned)
+    wid = create(client, info["csrf"])
+    url = f"/api/merchant/workshops/{wid}"
+    saved = client.get(url).json()
+    preview = client.post(url + "/preview", headers={"X-CSRF-Token": info["csrf"]}).json()
+    assert preview["terms_version"] == saved["terms_version"]
+    assert preview["terms_snapshot_hash"] == saved["terms_snapshot_hash"]
+    reviewed = {
+        "expected_terms_version": preview["terms_version"],
+        "expected_terms_snapshot_hash": preview["terms_snapshot_hash"],
+    }
+    assert client.post(url + "/publish", json=reviewed).status_code == 403
+    assert other.post(url + "/publish", json=reviewed, headers={"X-CSRF-Token": other_info["csrf"]}).status_code == 404
+    edited = save_body(saved)
+    edited["financials"]["ticket_price_minor"] += 100
+    assert client.patch(url, json=edited, headers={"X-CSRF-Token": info["csrf"]}).status_code == 200
+    current = client.get(url).json()
+    assert current["terms_version"] == saved["terms_version"]
+    assert current["terms_snapshot_hash"] != saved["terms_snapshot_hash"]
+    stale = client.post(url + "/publish", json=reviewed, headers={"X-CSRF-Token": info["csrf"]})
+    assert stale.status_code == 409
+    assert "changed after review" in stale.json()["detail"]
+    assert client.get(url).json()["is_frozen"] is False
+    assert TestClient(app).get(f"/api/workshops/{wid}").status_code == 404
+    fresh = client.post(url + "/preview", headers={"X-CSRF-Token": info["csrf"]}).json()
+    reviewed = {
+        "expected_terms_version": fresh["terms_version"],
+        "expected_terms_snapshot_hash": fresh["terms_snapshot_hash"],
+    }
+    first = client.post(url + "/publish", json=reviewed, headers={"X-CSRF-Token": info["csrf"]})
+    assert first.status_code == 201, first.text
+    repeated = client.post(url + "/publish", json=reviewed, headers={"X-CSRF-Token": info["csrf"]})
+    assert repeated.status_code == 200
+    assert repeated.json() == first.json()

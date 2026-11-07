@@ -7,6 +7,30 @@ export class ApiError extends Error {
   }
 }
 
+export class ApiContractError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApiContractError";
+  }
+}
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export function requireWorkshopDetail(value: unknown): WorkshopDetail {
+  if (!record(value) || !record(value.financials) || !Array.isArray(value.financials.materials)) {
+    throw new ApiContractError(
+      "The backend returned a workshop summary without saved financial inputs and materials. "
+      + "Restart the local API with the current code, then click Try again. "
+      + "Do not create another draft; this does not mean the saved workshop was lost.",
+    );
+  }
+  if (value.financials.materials.some((line: unknown) => !record(line) || typeof line.name !== "string")) {
+    throw new ApiContractError("The backend returned incomplete material details. Reload the updated API and try again; no empty material list has been substituted.");
+  }
+  return value as unknown as WorkshopDetail;
+}
+
 let csrfToken: string | null = null;
 
 function csrfTokenFromCookie(): string | null {
@@ -22,7 +46,11 @@ function errorMessage(detail: unknown, fallback: string): string {
     return errorMessage((detail as { detail: unknown }).detail, fallback);
   }
   if (Array.isArray(detail)) {
-    return detail.map((entry) => typeof entry === "object" && entry && "msg" in entry ? String(entry.msg) : String(entry)).join("; ");
+    return detail.map((entry) => {
+      if (typeof entry !== "object" || !entry || !("msg" in entry)) return "Invalid request field.";
+      const location = "loc" in entry && Array.isArray(entry.loc) ? entry.loc.filter((part: unknown) => part !== "body").join(".") : "";
+      return `${location ? `${location}: ` : ""}${String(entry.msg)}`;
+    }).join("; ");
   }
   return fallback;
 }
@@ -70,11 +98,11 @@ export function editWorkshop(workshopId: string, payload: DraftPayload): Promise
 export function previewWorkshop(workshopId: string): Promise<ViabilityPreview> {
   return request<ViabilityPreview>(`/api/merchant/workshops/${workshopId}/preview`, { method: "POST" }, true);
 }
-export function publishWorkshop(workshopId: string): Promise<Campaign> {
-  return request<Campaign>(`/api/merchant/workshops/${workshopId}/publish`, { method: "POST" }, true);
+export function publishWorkshop(workshopId: string, review?: { expected_terms_version: number; expected_terms_snapshot_hash: string }): Promise<Campaign> {
+  return request<Campaign>(`/api/merchant/workshops/${workshopId}/publish`, { method: "POST", ...(review ? { body: JSON.stringify(review) } : {}) }, true);
 }
-export function getWorkshop(id: string): Promise<WorkshopDetail> {
-  return request(`/api/merchant/workshops/${encodeURIComponent(id)}`);
+export async function getWorkshop(id: string): Promise<WorkshopDetail> {
+  return requireWorkshopDetail(await request<unknown>(`/api/merchant/workshops/${encodeURIComponent(id)}`));
 }
 export function searchMaterials(id: string, query: string): Promise<MaterialSearchResult> {
   return request(`/api/merchant/workshops/${encodeURIComponent(id)}/materials/search`, {

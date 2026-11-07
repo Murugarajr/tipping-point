@@ -135,7 +135,7 @@ def _offer_out(snapshot: MaterialOfferSnapshot, *, stale_after: int) -> Material
     )
 
 
-def _preview(inputs: CampaignFinancialsInput) -> ViabilityPreviewOut:
+def _preview(inputs: CampaignFinancialsInput, terms: CampaignTerms) -> ViabilityPreviewOut:
     report = calculate_viability(inputs)
     note = (
         "Channel3 offer snapshots are provider facts paired with merchant-reviewed pack, usage, suitability, and shipping assumptions; no stock, delivered-cost, quantity, or shipping-time guarantee is implied."
@@ -144,6 +144,8 @@ def _preview(inputs: CampaignFinancialsInput) -> ViabilityPreviewOut:
     )
     return ViabilityPreviewOut(
         algorithm_version=report.algorithm_version,
+        terms_version=terms.version,
+        terms_snapshot_hash=terms.snapshot_hash,
         currency=report.currency,
         ticket_price_minor=report.ticket_price_minor,
         capacity=report.capacity,
@@ -408,7 +410,7 @@ def select_material_offer(
         per_attendee_units=payload.per_attendee_units,
         shipping_allowance_minor=inputs.shipping_allowance_minor,
         shipping_allowance_source=inputs.shipping_allowance_source,
-        viability_preview=_preview(inputs),
+        viability_preview=_preview(inputs, terms),
     )
 
 

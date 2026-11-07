@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -83,9 +84,16 @@ try {
   let expireNextSave = false;
   let failDetailAfterSave = false;
   let failNextDetail = false;
+  let failCreate = false;
+  let failPreview = false;
+  let stalePreview = false;
   let publicUnavailable = false;
   let providerMode = "unconfigured";
   let workshop = null;
+  const syncBinding = () => {
+    if (workshop) workshop.terms_snapshot_hash = createHash("sha256")
+      .update(JSON.stringify([workshop.financials, workshop.opens_at, workshop.closes_at])).digest("hex");
+  };
   const workshopId = "11111111-1111-4111-8111-111111111111";
   const campaignId = "33333333-3333-4333-8333-333333333333";
   const offer = { offer_snapshot_id: "22222222-2222-4222-8222-222222222222", product_title: "Fixture needle pack",
@@ -124,14 +132,17 @@ try {
     if (path === "/api/merchant/login") { code = failLogin ? 401 : 200; body = failLogin ? { detail: "invalid login credentials" } : fixture; if (!failLogin) authMode = "authenticated"; }
     if (path === "/api/merchant/workshops") {
       code = expireListing ? 401 : 200; body = code === 200 ? workshop ? [workshop] : [] : { detail: "expired" };
-      if (request.method === "POST") {
+      if (request.method === "POST" && !failCreate) {
         const payload = JSON.parse(request.postData);
         workshop = { workshop_id: workshopId, title: payload.title, description: payload.description,
           capacity: payload.financials.capacity, ticket_price_minor: payload.financials.ticket_price_minor,
           currency: "GBP", terms_version: 1, is_frozen: false, campaign_id: null, campaign: null,
           opens_at: payload.schedule.opens_at, closes_at: payload.schedule.closes_at, offer_stale_after_seconds: 3600,
           financials: { ...payload.financials, materials: payload.financials.materials.map((line) => ({ ...line, offer_provenance: null })) } };
-        code = 201; body = workshop;
+        syncBinding(); code = 201; body = workshop;
+      }
+      if (request.method === "POST" && failCreate) {
+        code = 422; body = { detail: [{ loc: ["body", "schedule", "closes_at"], msg: "Fixture cutoff validation failed" }] };
       }
     }
     if (path === `/api/merchant/workshops/${workshopId}`) {
@@ -148,16 +159,22 @@ try {
               const old = workshop.financials.materials.find((item) => item.name === line.name);
               return { ...line, offer_provenance: line.selected_offer_snapshot_id ? old?.offer_provenance : null };
             }) } };
-          body = workshop;
+          syncBinding(); body = workshop;
           if (failDetailAfterSave) { failDetailAfterSave = false; failNextDetail = true; }
         }
       }
       if (request.method === "GET" && failNextDetail) { failNextDetail = false; code = 503; body = { detail: "saved detail temporarily unavailable" }; }
     }
-    if (path === `/api/merchant/workshops/${workshopId}/preview`) { code = 200; body = preview; }
+    if (path === `/api/merchant/workshops/${workshopId}/preview`) {
+      code = failPreview ? 503 : 200;
+      body = failPreview ? { detail: "Fixture preview unavailable" } : {
+        ...preview, terms_version: workshop.terms_version,
+        terms_snapshot_hash: stalePreview ? "d".repeat(64) : workshop.terms_snapshot_hash,
+      };
+    }
     if (path === `/api/merchant/workshops/${workshopId}/publish` && workshop) {
       const campaign = { campaign_id: campaignId, workshop_id: workshopId, status: "OPEN", capacity: workshop.capacity,
-        cutoff_at: workshop.closes_at, terms_version: 1, terms_id: "44444444-4444-4444-8444-444444444444", terms_snapshot_hash: "browser-fixture-hash" };
+        cutoff_at: workshop.closes_at, terms_version: 1, terms_id: "44444444-4444-4444-8444-444444444444", terms_snapshot_hash: workshop.terms_snapshot_hash };
       workshop = { ...workshop, is_frozen: true, campaign_id: campaignId, campaign };
       code = 201; body = campaign;
     }
@@ -175,7 +192,7 @@ try {
         offer_provenance: { ...offer, provider: "channel3", suitability_reviewed: true, pack_size_reviewed: true, review_notes: selected.review_notes } };
       workshop.financials = { ...workshop.financials, materials: [...workshop.financials.materials.filter((item) => item.name !== line.name), line],
         shipping_allowance_minor: selected.shipping_allowance_minor, shipping_allowance_source: selected.shipping_allowance_source };
-      code = 200; body = { viability_preview: preview };
+      syncBinding(); code = 200; body = { viability_preview: { ...preview, terms_version: workshop.terms_version, terms_snapshot_hash: workshop.terms_snapshot_hash } };
     }
     if (path === "/api/workshops") { code = publicUnavailable ? 503 : 200; body = publicUnavailable ? { detail: "unavailable" } : publicItem() ? [publicItem()] : []; }
     if (path.startsWith("/api/workshops/")) { code = path === `/api/workshops/${workshopId}` && publicItem() ? 200 : 404; body = code === 200 ? publicItem() : { detail: "published workshop not found" }; }
@@ -357,6 +374,13 @@ try {
   await setField("Description", "A real-contract browser test fixture.");
   await setField("Ticket price", "52.05");
   await setField("Capacity", "4");
+  failCreate = true;
+  await click(".workbench .host-page-heading .host-button");
+  await until(() => evaluate("!!document.querySelector('.workbench [role=alert]')"), "failed create");
+  assert.equal(await evaluate("location.pathname"), "/host/workshops/new");
+  assert.match(await evaluate("document.querySelector('.workbench [role=alert]').innerText"), /Could not create draft: schedule.closes_at/);
+  assert.equal(await evaluate("document.querySelector('[data-section=basics] input').value"), "A workshop from the workbench");
+  failCreate = false;
   await click(".workbench .host-page-heading .host-button");
   await until(() => evaluate(`location.pathname.endsWith('${workshopId}') && /^(All changes saved|Saved on the server[.])$/.test(document.querySelector('.workbench-status [role=status]')?.innerText ?? '')`), "saved workbench");
   assert.equal(workshop.ticket_price_minor, 5205);
@@ -404,6 +428,8 @@ try {
   await screenshot("workbench-materials-1440.png");
   passed("manual materials, explicit-only search, unconfigured/empty/stale states and reviewed selection (mocked provider API)");
   await click(".workbench-tabs button:nth-child(3)");
+  await click("[data-section=economics] > button");
+  await until(() => evaluate("!!document.querySelector('.economics-results')"), "explicit saved preview after material selection");
   await setField("Scenario attendance", "2", ".economics-results");
   assert.match(await evaluate("document.querySelector('.economics-results .host-notice').innerText"), /This attendance covers/);
   await setField("Scenario attendance", "3", ".economics-results");
@@ -473,6 +499,101 @@ try {
     if (width === 390) await screenshot("published-detail-390.png");
   }
   passed("host workbench and actual-contract public detail reflow at 375–1440px");
+  const providerCallsBeforeManual = apiCalls.filter((item) => item.path.endsWith("/materials/search")).length;
+  await viewport(1440);
+  await visit("/host/workshops/new#review");
+  await until(() => evaluate("!!document.querySelector('.workbench')"), "new manual workflow");
+  assert.match(await evaluate("document.querySelector('[data-section=review] .workflow-prerequisites').innerText"), /Save this workshop/);
+  assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').disabled"), true);
+  assert.notEqual(await evaluate("document.querySelector('[data-section=review] .cost-breakdown > div:nth-child(4) dd').innerText"), "Not set");
+  await click(".workbench-tabs button:nth-child(1)");
+  await setField("Workshop title", "Manual materials — browser fixture");
+  await setField("Ticket price", "10.00");
+  const validClose = await evaluate("document.querySelectorAll('[data-section=basics] input[type=datetime-local]')[1].value");
+  const openValue = await evaluate("document.querySelector('[data-section=basics] input[type=datetime-local]').value");
+  await setField("Booking cutoff", openValue);
+  const createCount = apiCalls.filter((item) => item.path === "/api/merchant/workshops" && item.method === "POST").length;
+  await click(".workbench .host-page-heading .host-button");
+  assert.match(await evaluate("document.querySelector('.workbench [role=alert]').innerText"), /after booking open/);
+  assert.equal(apiCalls.filter((item) => item.path === "/api/merchant/workshops" && item.method === "POST").length, createCount);
+  await setField("Booking cutoff", validClose);
+  await click(".workbench .host-page-heading .host-button");
+  await until(() => evaluate(`location.pathname.endsWith('${workshopId}') && !!document.querySelector('.workbench-status')`), "manual draft persisted");
+  await click(".workbench-tabs button:nth-child(2)");
+  await setField("Material name", "box", ".manual-material-form");
+  await setField("Assumed pack price", "3.50", ".manual-material-form");
+  assert.match(await evaluate("document.querySelector('.pending-material-notice').innerText"), /entered but not added/);
+  await click(".workbench .host-page-heading .host-button");
+  assert.match(await evaluate("document.querySelector('.workbench [role=alert]').innerText"), /has not been added/);
+  await click(".manual-material-form button[type=submit]");
+  assert.match(await evaluate("document.querySelector('.material-save-state').innerText"), /Not saved yet/);
+  await click(".workbench .host-page-heading .host-button");
+  await until(() => evaluate("document.querySelector('.material-save-state')?.innerText === 'Saved on server'"), "manual line persisted");
+  assert.equal(workshop.financials.materials[0].name, "box");
+  await click(".workbench-tabs button:nth-child(1)");
+  await setField("Booking cutoff", "");
+  await click(".workbench .host-page-heading .host-button");
+  assert.match(await evaluate("document.querySelector('.workbench [role=alert]').innerText"), /Booking cutoff/);
+  await setField("Booking cutoff", validClose);
+  await click(".workbench .host-page-heading .host-button");
+  await until(() => evaluate("/^(All changes saved|Saved on the server[.])$/.test(document.querySelector('.workbench-status [role=status]')?.innerText ?? '')"), "booking dates saved");
+  await click(".workbench-tabs button:nth-child(4)");
+  assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').disabled"), true);
+  failPreview = true;
+  await click("[data-section=review] > button:first-of-type");
+  await until(() => evaluate("!!document.querySelector('.workbench [role=alert]')"), "preview failure");
+  assert.match(await evaluate("document.querySelector('.workbench [role=alert]').innerText"), /Could not run preview/);
+  assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').disabled"), true);
+  failPreview = false; stalePreview = true;
+  await click("[data-section=review] > button:first-of-type");
+  await until(() => evaluate("document.querySelector('.workbench [role=alert]')?.innerText.includes('Saved terms changed')"), "stale preview rejected");
+  assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').disabled"), true);
+  stalePreview = false;
+  await click("[data-section=review] > button:first-of-type");
+  await until(() => evaluate("!document.querySelector('[data-section=review] .host-check input').disabled"), "preview permits acknowledgement");
+  await setField("I have reviewed", true, "[data-section=review]");
+  await click(".workbench-tabs button:nth-child(2)");
+  await setField("Material name", "not yet added", ".manual-material-form");
+  await click(".workbench-tabs button:nth-child(4)");
+  assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').checked"), false);
+  assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').disabled"), true);
+  assert.match(await evaluate("document.querySelector('[data-section=review] .workflow-prerequisites').innerText"), /not in the draft/);
+  await screenshot("review-material-prerequisite-1440.png");
+  await click(".workbench-tabs button:nth-child(2)");
+  await screenshot("materials-prerequisite-1440.png");
+  await evaluate("document.querySelector('.provider-prerequisites').scrollIntoView({ behavior: 'instant', block: 'center' })");
+  await screenshot("provider-search-prerequisite-1440.png");
+  await click(".manual-material-form button[type=button]");
+  await click(".workbench-tabs button:nth-child(4)");
+  await click("[data-section=review] > button:first-of-type");
+  await until(() => evaluate("!document.querySelector('[data-section=review] .host-check input').disabled"), "new preview after discarding pending line");
+  await setField("I have reviewed", true, "[data-section=review]");
+  await click(".workbench-tabs button:nth-child(1)");
+  await setField("Ticket price", "11.00");
+  await click(".workbench-tabs button:nth-child(4)");
+  assert.equal(await evaluate("document.querySelector('[data-section=review] .host-check input').checked"), false);
+  assert.equal(await evaluate("document.querySelector('[data-section=review] > button:last-of-type').disabled"), true);
+  await click(".workbench .host-page-heading .host-button");
+  await until(() => evaluate("/^(All changes saved|Saved on the server[.])$/.test(document.querySelector('.workbench-status [role=status]')?.innerText ?? '')"), "edited terms saved");
+  await click("[data-section=review] > button:first-of-type");
+  await until(() => evaluate("!document.querySelector('[data-section=review] .host-check input').disabled"), "preview edited saved terms");
+  await setField("I have reviewed", true, "[data-section=review]");
+  assert.equal(await evaluate("document.querySelector('.channel3-section .host-check input').checked"), false);
+  const expectedHash = workshop.terms_snapshot_hash;
+  await screenshot("manual-review-ready-1440.png");
+  await viewport(390, 844);
+  await screenshot("manual-review-ready-390.png");
+  await evaluate("document.querySelector('[data-section=review] > .host-check').scrollIntoView({ behavior: 'instant', block: 'center' })");
+  await screenshot("manual-review-controls-390.png");
+  await noOverflow("mobile manual review prerequisites");
+  await click("[data-section=review] > button:last-of-type");
+  await until(() => evaluate("!!document.querySelector('.published-reference')"), "manual-only publication");
+  const reviewedRequest = JSON.parse(apiCalls.filter((item) => item.path.endsWith("/publish")).at(-1).body);
+  assert.equal(reviewedRequest.expected_terms_snapshot_hash, expectedHash);
+  assert.equal(reviewedRequest.expected_terms_version, workshop.terms_version);
+  assert.equal(apiCalls.filter((item) => item.path.endsWith("/materials/search")).length, providerCallsBeforeManual);
+  passed("new → create → add material → save → dates → save → preview → acknowledge → publish needs no Channel3 acknowledgement");
+  passed("invalid dates, preview failure, stale preview and post-ack edits keep publication disabled and preserve entered data");
   authMode = "unavailable"; expireListing = false;
   await visit("/host/login");
   await until(() => evaluate("document.querySelector('h1').innerText.includes('unavailable')"), "unavailable session");
