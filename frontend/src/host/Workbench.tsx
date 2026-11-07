@@ -9,6 +9,7 @@ import { MoneyField, NumberField } from "./Fields";
 import Materials from "./Materials";
 import SettlementPanel from "./SettlementPanel";
 import { Notice } from "./HostApp";
+import { VisibilityControl } from "./Visibility";
 
 // Local Sandbox test tooling exists only in the local Vite dev server; built/hosted bundles never include it.
 const sandboxTestTools = import.meta.env.DEV === true;
@@ -173,6 +174,7 @@ export default function Workbench({ id, onUnauthorized }: { id: string; onUnauth
     <button className="host-text-button back-link" onClick={leave}>← Your workshops</button>
     <div className="host-page-heading"><div><p className="host-kicker">{id === "new" ? "New workshop" : `Workshop / terms v${detail?.terms_version ?? "—"}`}</p><h1>{draft.title || "Untitled workshop"}</h1><div className="workbench-status"><span className={`host-badge ${frozen ? "frozen" : ""}`}>{frozen ? "Published · immutable" : "Draft"}</span><span role="status">{dirty ? "Unsaved changes" : id === "new" ? "Not saved yet" : saveState || "All changes saved"}</span></div></div><div className="row-actions">{!frozen && <button className="host-button" onClick={save} disabled={busy}>{busy ? "Working…" : id === "new" ? "Create draft" : "Save changes"}<Arrow /></button>}{frozen && detail?.campaign && <a className="host-button secondary" href={`/workshops/${id}`}>View public workshop<Arrow diagonal /></a>}</div></div>
     <Notice error={error} />
+    {id !== "new" && detail && <div className="host-panel workbench-visibility" aria-label="Discovery visibility"><VisibilityControl workshop={{ workshop_id: id, title: detail.title, hidden_from_discovery_at: detail.hidden_from_discovery_at }} onChanged={(result) => setDetail((current) => current ? { ...current, hidden_from_discovery_at: result.hidden_from_discovery_at } : current)} onUnauthorized={onUnauthorized} /></div>}
     {frozen && detail?.campaign && <SettlementPanel campaign={detail.campaign} refresh={() => void load()} />}
     {frozen && <div className="host-notice">Publishing freezes these campaign terms. All inputs below are read-only. OPEN means published, not payment-confirmed.</div>}
     <div className="workbench-grid"><div>

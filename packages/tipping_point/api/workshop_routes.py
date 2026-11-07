@@ -10,6 +10,7 @@ authoritative transaction defined in ``economics.publishing``.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Literal
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -32,7 +33,7 @@ from ..channel3 import (
     Channel3UnavailableError,
     Channel3UnconfiguredError,
 )
-from ..db.models import Campaign, CampaignTerms, MaterialOfferSnapshot, Workshop
+from ..db.models import Campaign, CampaignTerms, MaterialOfferSnapshot, Workshop, WorkshopVisibilityEvent
 from ..db.session import SessionLocal
 from ..settlement.projections import campaign_projection
 from ..economics import (
@@ -61,6 +62,7 @@ from .schemas import (
     WorkshopEditRequest,
     WorkshopOut,
     WorkshopDetailOut,
+    WorkshopVisibilityOut,
     MerchantFinancialsInput,
     PublishReviewRequest,
 )
@@ -122,6 +124,7 @@ def _workshop_out(db: Session, workshop: Workshop) -> WorkshopOut:
         opens_at=terms.opens_at,
         closes_at=terms.closes_at,
         campaign_id=str(campaign.id) if campaign is not None else None,
+        hidden_from_discovery_at=workshop.hidden_from_discovery_at,
     )
 
 
@@ -181,16 +184,62 @@ def create_workshop(
 
 @router.get("/workshops")
 def list_workshops(
+    visibility: Literal["listed", "hidden", "all"] = "listed",
     auth: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db),
 ) -> list[WorkshopOut]:
-    """List the merchant's own workshops only."""
-    workshops = db.scalars(
-        select(Workshop)
-        .where(Workshop.merchant_id == auth.merchant.id)
-        .order_by(Workshop.created_at.desc())
-    ).all()
+    """List the merchant's own workshops only; listed (not hidden) by default."""
+    stmt = select(Workshop).where(Workshop.merchant_id == auth.merchant.id)
+    if visibility == "listed":
+        stmt = stmt.where(Workshop.hidden_from_discovery_at.is_(None))
+    elif visibility == "hidden":
+        stmt = stmt.where(Workshop.hidden_from_discovery_at.is_not(None))
+    workshops = db.scalars(stmt.order_by(Workshop.created_at.desc())).all()
     return [_workshop_out(db, w) for w in workshops]
+
+
+def _set_discovery_visibility(db: Session, auth: AuthContext, workshop_id, *, hide: bool) -> WorkshopVisibilityOut:
+    """Listing metadata only. Never touches terms, campaigns, bookings, payments or settlement work.
+
+    Idempotent: a repeated action records no second audit event.
+    """
+    workshop = _owned_workshop(db, auth.merchant.id, workshop_id, for_update=True)
+    previous = workshop.hidden_from_discovery_at
+    if (previous is not None) == hide:
+        return WorkshopVisibilityOut(workshop_id=str(workshop.id), hidden_from_discovery_at=previous, changed=False)
+    now = datetime.now(timezone.utc)
+    workshop.hidden_from_discovery_at = now if hide else None
+    db.add(WorkshopVisibilityEvent(
+        workshop_id=workshop.id, merchant_id=auth.merchant.id, action="HIDE" if hide else "RESTORE",
+        previous_hidden_at=previous, hidden_from_discovery_at=workshop.hidden_from_discovery_at, occurred_at=now,
+    ))
+    db.flush()
+    return WorkshopVisibilityOut(
+        workshop_id=str(workshop.id), hidden_from_discovery_at=workshop.hidden_from_discovery_at, changed=True,
+    )
+
+
+@router.post("/workshops/{workshop_id}/hide-from-discovery", response_model=WorkshopVisibilityOut)
+def hide_workshop_from_discovery(
+    workshop_id: _uuid.UUID,
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> WorkshopVisibilityOut:
+    """Remove from public browsing; direct links, bookings and payments are unaffected."""
+    require_csrf(request, auth)
+    return _set_discovery_visibility(db, auth, workshop_id, hide=True)
+
+
+@router.post("/workshops/{workshop_id}/restore-visibility", response_model=WorkshopVisibilityOut)
+def restore_workshop_visibility(
+    workshop_id: _uuid.UUID,
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db),
+) -> WorkshopVisibilityOut:
+    require_csrf(request, auth)
+    return _set_discovery_visibility(db, auth, workshop_id, hide=False)
 
 
 @router.get("/workshops/{workshop_id}", response_model=WorkshopDetailOut)

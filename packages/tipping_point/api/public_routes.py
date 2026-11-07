@@ -75,7 +75,11 @@ def _public_workshop(workshop, campaign, terms, *, now=None, db=None, settings=N
 @router.get("", response_model=list[PublicWorkshopOut])
 def list_public_workshops(request: Request, response: Response, db: Session = Depends(get_db)):
     response.headers["Cache-Control"] = "no-store"
-    rows = db.execute(_published_query().order_by(Campaign.created_at.desc()).limit(100)).all()
+    # Discovery listing only: hidden workshops stay reachable by direct link (not access control).
+    rows = db.execute(
+        _published_query().where(Workshop.hidden_from_discovery_at.is_(None))
+        .order_by(Campaign.created_at.desc()).limit(100)
+    ).all()
     return [_public_workshop(*row, db=db, settings=request.app.state.settings) for row in rows]
 
 

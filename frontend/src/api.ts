@@ -1,4 +1,4 @@
-import type { Campaign, DraftPayload, SessionInfo, ViabilityPreview, Workshop, WorkshopDetail, MaterialSearchResult, MaterialSelection, PublicWorkshop, GuestSession, GuestBooking } from "./types";
+import type { Campaign, DraftPayload, HostVisibilityFilter, SessionInfo, ViabilityPreview, Workshop, WorkshopDetail, WorkshopVisibilityResult, MaterialSearchResult, MaterialSelection, PublicWorkshop, GuestSession, GuestBooking } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly detail: unknown) {
@@ -88,7 +88,16 @@ export async function logout(): Promise<void> {
   clearCsrfToken();
 }
 
-export function listWorkshops(): Promise<Workshop[]> { return request<Workshop[]>("/api/merchant/workshops"); }
+export function listWorkshops(visibility: HostVisibilityFilter = "listed"): Promise<Workshop[]> {
+  return request<Workshop[]>(`/api/merchant/workshops?visibility=${visibility}`);
+}
+/** Listing metadata only: never cancels the workshop, its bookings or its payments. */
+export function hideFromDiscovery(workshopId: string): Promise<WorkshopVisibilityResult> {
+  return request<WorkshopVisibilityResult>(`/api/merchant/workshops/${encodeURIComponent(workshopId)}/hide-from-discovery`, { method: "POST" }, true);
+}
+export function restoreVisibility(workshopId: string): Promise<WorkshopVisibilityResult> {
+  return request<WorkshopVisibilityResult>(`/api/merchant/workshops/${encodeURIComponent(workshopId)}/restore-visibility`, { method: "POST" }, true);
+}
 export function createWorkshop(payload: DraftPayload): Promise<Workshop> {
   return request<Workshop>("/api/merchant/workshops", { method: "POST", body: JSON.stringify(payload) }, true);
 }

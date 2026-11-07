@@ -51,7 +51,12 @@ export interface Workshop {
   opens_at: string | null;
   closes_at: string | null;
   campaign_id?: string | null;
+  /** Discovery-listing metadata only; null means listed in public browsing. */
+  hidden_from_discovery_at?: string | null;
 }
+
+export type HostVisibilityFilter = "listed" | "hidden" | "all";
+export interface WorkshopVisibilityResult { workshop_id: string; hidden_from_discovery_at: string | null; changed: boolean }
 
 export interface MaterialInput {
   name: string;

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import * as api from "../api";
-import type { SessionInfo, Workshop } from "../types";
+import type { HostVisibilityFilter, SessionInfo, Workshop, WorkshopVisibilityResult } from "../types";
 import { Arrow, Mark } from "../public/Artwork";
 import { navigate, useLocation } from "../navigation";
 import { displayDate, money, safeHostReturn, workshopRoute } from "./model";
 import Workbench from "./Workbench";
+import { VisibilityControl } from "./Visibility";
 import "./host.css";
 
 type SessionState = "loading" | "anonymous" | "authenticated" | "expired" | "unavailable";
@@ -108,24 +109,40 @@ export default function HostApp() {
   </>;
 }
 
+const FILTERS: { value: HostVisibilityFilter; label: string }[] = [
+  { value: "listed", label: "Listed" }, { value: "hidden", label: "Hidden from discovery" }, { value: "all", label: "All" },
+];
+
 function WorkshopList({ onUnauthorized }: { onUnauthorized: (cause: unknown) => boolean }) {
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
+  const [filter, setFilter] = useState<HostVisibilityFilter>("listed");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const load = async () => {
+  const [notice, setNotice] = useState<string | null>(null);
+  const load = async (view: HostVisibilityFilter = filter) => {
     setLoading(true); setError(null);
-    try { setWorkshops(await api.listWorkshops()); }
+    try { setWorkshops(await api.listWorkshops(view)); }
     catch (cause) { if (!onUnauthorized(cause)) setError("Your workshops could not be loaded. Try again."); }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(filter); }, [filter]);
+  const changed = (title: string) => (result: WorkshopVisibilityResult) => {
+    setNotice(result.hidden_from_discovery_at
+      ? `“${title}” is hidden from discovery. Its link, bookings and payments are unchanged. Find it under “Hidden from discovery”.`
+      : `“${title}” is listed in public browsing again.`);
+    void load(filter);
+  };
   return <section><div className="host-page-heading"><div><p className="host-kicker">Your workshops</p><h1>A clearer plan starts here.</h1><p>Draft the experience. Review the costs. Publish the terms.</p></div><button className="host-button" onClick={() => navigate("/host/workshops/new")}>Create draft<Arrow /></button></div>
+    <div className="host-filter" role="group" aria-label="Filter workshops by discovery visibility">{FILTERS.map((item) => <button key={item.value} type="button" aria-pressed={filter === item.value} onClick={() => { setNotice(null); setFilter(item.value); }}>{item.label}</button>)}</div>
+    {notice && <p className="host-notice host-positive" role="status">{notice}</p>}
     {loading ? <div className="host-panel" role="status">Loading your owned workshops…</div>
       : error ? <div className="host-panel"><Notice error={error} /><button className="host-button secondary" onClick={() => void load()}>Try again</button></div>
-        : !workshops.length ? <div className="host-panel host-empty"><Mark /><h2>Your first workshop starts with an idea.</h2><p>There are no owned workshops yet. No example inventory is added to this workspace.</p><button className="host-button" onClick={() => navigate("/host/workshops/new")}>Create your first draft</button></div>
+        : !workshops.length ? filter === "hidden"
+          ? <div className="host-panel host-empty visibility-empty"><p>No workshops are hidden from discovery.</p></div>
+          : <div className="host-panel host-empty"><Mark /><h2>Your first workshop starts with an idea.</h2><p>{filter === "listed" ? "There are no listed workshops. Any workshop you hid from discovery is under “Hidden from discovery”." : "There are no owned workshops yet."} No example inventory is added to this workspace.</p><button className="host-button" onClick={() => navigate("/host/workshops/new")}>Create your first draft</button></div>
           : <div className="host-workshop-list">{workshops.map((workshop) => {
             const gaps = [workshop.ticket_price_minor <= 0 ? "Price not set" : null, !workshop.opens_at || !workshop.closes_at ? "Booking dates missing" : null].filter(Boolean);
-            return <article className="host-workshop-row" key={workshop.workshop_id}><div><span className={`host-badge ${workshop.is_frozen ? "frozen" : ""}`}>{workshop.is_frozen ? "Published · immutable" : "Draft"}</span><h2>{workshop.title}</h2><p>{workshop.description || "No description yet."}</p>{gaps.length > 0 && <p className="setup-gaps">{gaps.join(" · ")}</p>}</div><dl><div><dt>Ticket price</dt><dd>{workshop.ticket_price_minor > 0 ? money(workshop.ticket_price_minor) : "Price not set"}</dd></div><div><dt>Capacity</dt><dd>{workshop.capacity} places</dd></div><div><dt>Booking cutoff · London time</dt><dd>{displayDate(workshop.closes_at)}</dd></div></dl><div className="row-actions"><button className="host-button secondary" onClick={() => navigate(`/host/workshops/${workshop.workshop_id}`)}>{workshop.is_frozen ? "Open workshop" : "Continue setup"}<Arrow /></button>{workshop.is_frozen && workshop.campaign_id && <a href={`/workshops/${workshop.workshop_id}`} className="text-link">View public page<Arrow diagonal /></a>}</div></article>;
+            return <article className="host-workshop-row" key={workshop.workshop_id}><div><span className={`host-badge ${workshop.is_frozen ? "frozen" : ""}`}>{workshop.is_frozen ? "Published · immutable" : "Draft"}</span><h2>{workshop.title}</h2><p>{workshop.description || "No description yet."}</p>{gaps.length > 0 && <p className="setup-gaps">{gaps.join(" · ")}</p>}</div><dl><div><dt>Ticket price</dt><dd>{workshop.ticket_price_minor > 0 ? money(workshop.ticket_price_minor) : "Price not set"}</dd></div><div><dt>Capacity</dt><dd>{workshop.capacity} places</dd></div><div><dt>Booking cutoff · London time</dt><dd>{displayDate(workshop.closes_at)}</dd></div></dl><div className="row-actions"><button className="host-button secondary" onClick={() => navigate(`/host/workshops/${workshop.workshop_id}`)}>{workshop.is_frozen ? "Open workshop" : "Continue setup"}<Arrow /></button>{workshop.is_frozen && workshop.campaign_id && <a href={`/workshops/${workshop.workshop_id}`} className="text-link">View public page<Arrow diagonal /></a>}<VisibilityControl workshop={workshop} onChanged={changed(workshop.title)} onUnauthorized={onUnauthorized} /></div></article>;
           })}</div>}
   </section>;
 }

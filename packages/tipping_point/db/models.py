@@ -100,6 +100,12 @@ class Workshop(Base):
         nullable=False,
         default="GBP",
     )
+    # Discovery-listing metadata only (NULL = listed). Not part of frozen
+    # terms, not an access-control boundary, never read by payment/settlement.
+    hidden_from_discovery_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
@@ -118,6 +124,34 @@ class Workshop(Base):
             "ticket_price_minor >= 0",
             name="ck_workshop_ticket_price_non_negative",
         ),
+    )
+
+
+class WorkshopVisibilityEvent(Base):
+    """Append-only audit of merchant Hide from discovery / Restore visibility actions."""
+
+    __tablename__ = "workshop_visibility_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_generate_uuid)
+    workshop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workshops.id", ondelete="RESTRICT"), nullable=False
+    )
+    merchant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("merchants.id", ondelete="RESTRICT"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hidden_from_discovery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("action IN ('HIDE','RESTORE')", name="ck_visibility_event_action"),
+        CheckConstraint(
+            "(action = 'HIDE' AND hidden_from_discovery_at IS NOT NULL)"
+            " OR (action = 'RESTORE' AND hidden_from_discovery_at IS NULL)",
+            name="ck_visibility_event_state",
+        ),
+        Index("ix_visibility_events_workshop", "workshop_id", "occurred_at"),
     )
 
 

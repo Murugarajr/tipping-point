@@ -78,11 +78,17 @@ test("API errors remain errors instead of falling back to sample success", async
 test("merchant-only listing contract stays merchant-only", async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
+  const seen = [];
   globalThis.fetch = async (path) => {
-    assert.equal(path, "/api/merchant/workshops");
+    seen.push(path);
     return new Response("[]", { status: 200 });
   };
   assert.deepEqual(await api.listWorkshops(), []);
+  assert.deepEqual(await api.listWorkshops("hidden"), []);
+  assert.deepEqual(await api.listWorkshops("all"), []);
+  // Merchant-only endpoint; default view is listed (not hidden from discovery).
+  assert.deepEqual(seen, ["/api/merchant/workshops?visibility=listed", "/api/merchant/workshops?visibility=hidden",
+    "/api/merchant/workshops?visibility=all"]);
 });
 
 test("brand text and accent combinations meet WCAG AA normal text contrast", async () => {

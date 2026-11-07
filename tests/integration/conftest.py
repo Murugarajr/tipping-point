@@ -129,6 +129,7 @@ def owned(migrated_database) -> _OwnedRecords:
         PaymentOperation,
         SettlementWork,
         Workshop,
+        WorkshopVisibilityEvent,
     )
     from tipping_point.db.session import session_scope
 
@@ -233,6 +234,15 @@ def owned(migrated_database) -> _OwnedRecords:
                 delete(CampaignTerms).where(
                     (CampaignTerms.id.in_(registry.terms))
                     | (CampaignTerms.workshop_id.in_(workshop_ids))
+                )
+            )
+            session.flush()
+        if workshop_ids or registry.merchants:
+            # Visibility audit rows are scoped to registered workshops/merchants only.
+            session.execute(
+                delete(WorkshopVisibilityEvent).where(
+                    (WorkshopVisibilityEvent.workshop_id.in_(workshop_ids))
+                    | (WorkshopVisibilityEvent.merchant_id.in_(registry.merchants))
                 )
             )
             session.flush()

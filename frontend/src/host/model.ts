@@ -166,3 +166,12 @@ export function settlementHeadline(status: SettlementStatus): string {
   if (status.state === "CANCELLED") return "Campaign cancelled after cleanup";
   return `Campaign ${status.state.toLowerCase()}`;
 }
+
+/** Exact confirmation copy for Hide from discovery (listing metadata only). */
+export const HIDE_FROM_DISCOVERY_EXPLANATION =
+  "Hides this workshop from browsing. Existing links and bookings remain valid. This does not cancel the workshop or its payments.";
+export const VISIBILITY_NOT_ACCESS_CONTROL = "Visibility is not a privacy or access-control setting: anyone with the link can still open it.";
+
+export function visibilityLabel(hiddenAt: string | null | undefined): string {
+  return hiddenAt ? `Hidden from discovery since ${displayDate(hiddenAt)}` : "Listed in public browsing";
+}

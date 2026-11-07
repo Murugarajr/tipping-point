@@ -126,6 +126,16 @@ class WorkshopOut(BaseModel):
     opens_at: datetime | None
     closes_at: datetime | None
     campaign_id: str | None = None
+    # Discovery-listing metadata only; NULL means listed in public browsing.
+    hidden_from_discovery_at: datetime | None = None
+
+
+class WorkshopVisibilityOut(BaseModel):
+    """Result of Hide from discovery / Restore visibility (listing metadata only)."""
+
+    workshop_id: str
+    hidden_from_discovery_at: datetime | None
+    changed: bool
 
 
 class SandboxCleanupStatusOut(BaseModel):
