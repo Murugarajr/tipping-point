@@ -1,4 +1,4 @@
-import type { Campaign, DraftPayload, SessionInfo, ViabilityPreview, Workshop, WorkshopDetail, MaterialSearchResult, MaterialSelection, PublicWorkshop } from "./types";
+import type { Campaign, DraftPayload, SessionInfo, ViabilityPreview, Workshop, WorkshopDetail, MaterialSearchResult, MaterialSelection, PublicWorkshop, GuestSession, GuestBooking } from "./types";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly detail: unknown) {
@@ -116,3 +116,69 @@ export function selectMaterial(id: string, payload: MaterialSelection): Promise<
 }
 export function listPublicWorkshops(): Promise<PublicWorkshop[]> { return request("/api/workshops"); }
 export function getPublicWorkshop(id: string): Promise<PublicWorkshop> { return request(`/api/workshops/${encodeURIComponent(id)}`); }
+
+// Guest CSRF is intentionally separate from merchant credentials and never persisted.
+let guestCsrfToken: string | null = null;
+export function clearGuestCsrfToken(): void { guestCsrfToken = null; }
+function validGuestCsrf(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && !/[\s\u0000-\u001f\u007f]/.test(value);
+}
+function guestCsrfFromCookie(): string | null {
+  const prefix = "tipping_guest_csrf=";
+  const entry = document.cookie.split(";").map((value) => value.trim()).find((value) => value.startsWith(prefix));
+  try {
+    const value = entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
+    return validGuestCsrf(value) ? value : null;
+  } catch { return null; }
+}
+function bindGuestCsrf(session: GuestSession): void {
+  guestCsrfToken = validGuestCsrf(session.csrf_token) ? session.csrf_token : guestCsrfFromCookie();
+  if (!guestCsrfToken) throw new ApiContractError("Guest session protection is unavailable. Restore your guest session before retrying; no mutation was sent.");
+}
+export function isGuestReservationValidationError(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.status === 422 && record(cause.detail)
+    && Array.isArray(cause.detail.detail) && cause.detail.detail.length > 0
+    && cause.detail.detail.every((entry: unknown) => record(entry) && Array.isArray(entry.loc) && entry.loc[0] === "body");
+}
+export function guestErrorCode(cause: unknown): string | null {
+  if (!(cause instanceof ApiError) || !record(cause.detail) || !record(cause.detail.detail)) return null;
+  return typeof cause.detail.detail.code === "string" ? cause.detail.detail.code : null;
+}
+export async function restoreGuestSession(): Promise<GuestSession> {
+  clearGuestCsrfToken();
+  const session = await request<GuestSession>("/api/guest/session");
+  bindGuestCsrf(session);
+  return session;
+}
+export async function createGuestSession(): Promise<GuestSession> {
+  clearGuestCsrfToken();
+  const bootstrap = await request<{ csrf_token: string }>("/api/guest/csrf");
+  if (!validGuestCsrf(bootstrap.csrf_token)) throw new ApiContractError("Guest session bootstrap protection is unavailable. No guest session was created.");
+  const session = await request<GuestSession>("/api/guest/session", {
+    method: "POST", body: "{}", headers: { "X-CSRF-Token": bootstrap.csrf_token },
+  });
+  guestCsrfToken = session.csrf_token;
+  return session;
+}
+async function guestMutation<T>(path: string, payload: object): Promise<T> {
+  if (!guestCsrfToken) await restoreGuestSession();
+  if (!validGuestCsrf(guestCsrfToken)) throw new ApiContractError("Guest session protection is unavailable. No mutation was sent.");
+  return request<T>(path, {
+    method: "POST", body: JSON.stringify(payload), headers: { "X-CSRF-Token": guestCsrfToken! },
+  });
+}
+export function reserveGuestSeat(campaignId: string, email: string, key: string): Promise<GuestBooking> {
+  return guestMutation(`/api/campaigns/${encodeURIComponent(campaignId)}/bookings`, { email, idempotency_key: key });
+}
+export function getGuestBooking(id: string): Promise<GuestBooking> {
+  return request(`/api/bookings/${encodeURIComponent(id)}`);
+}
+export function createGuestOrder(id: string): Promise<GuestBooking> {
+  return guestMutation(`/api/bookings/${encodeURIComponent(id)}/paypal/order`, {});
+}
+export function authorizeGuestBooking(id: string): Promise<GuestBooking> {
+  return guestMutation(`/api/bookings/${encodeURIComponent(id)}/paypal/authorize`, {});
+}
+export function cancelGuestBooking(id: string): Promise<GuestBooking> {
+  return guestMutation(`/api/bookings/${encodeURIComponent(id)}/cancel`, {});
+}

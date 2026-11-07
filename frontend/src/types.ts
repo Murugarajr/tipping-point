@@ -3,6 +3,30 @@ export interface Merchant {
   name: string;
 }
 
+export interface GuestSession {
+  expires_at: string;
+  csrf_token: string;
+}
+
+export interface GuestBooking {
+  booking_id: string;
+  campaign_id: string;
+  workshop_id: string;
+  workshop_title: string;
+  state: "CHECKOUT_RESERVED" | "AWAITING_APPROVAL" | "AUTHORIZATION_PENDING" | "AUTHORIZED" | "EXPIRED" | "CANCELLED" | "RELEASE_PENDING" | "VOIDED" | "REVIEW_REQUIRED" | "AUTHORIZATION_FAILED";
+  payment_state: "NOT_STARTED" | "AWAITING_APPROVAL" | "CHECKING" | "AUTHORIZED" | "RELEASE_PENDING" | "VOIDED" | "REVIEW_REQUIRED";
+  amount_minor: number;
+  currency: "GBP";
+  reservation_expires_at: string;
+  seat_held: boolean;
+  approve_url: string | null;
+  notice: string;
+  can_create_order: boolean;
+  can_authorize: boolean;
+  can_cancel: boolean;
+  updated_at: string;
+}
+
 export interface SessionInfo {
   merchant: Merchant;
   session_id: string;
@@ -153,6 +177,8 @@ export interface PublicWorkshop {
   cutoff_at: string;
   publication_status: string;
   booking_window_status: "not_open_yet" | "open" | "closed" | "unavailable";
-  reservations_available: false;
+  reservations_available: boolean;
   availability_note: string;
+  availability_reason: "available" | "not_open_yet" | "closed" | "full" | "payment_unconfigured" | "ineligible" | "schema_unavailable";
+  available_seats: number | null;
 }

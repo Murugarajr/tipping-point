@@ -10,13 +10,18 @@ authentication in hosted mode without secure cookies.
 from __future__ import annotations
 
 from typing import Literal
+from urllib.parse import urlsplit
+import ipaddress
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SESSION_COOKIE_NAME = "tipping_session"
 CSRF_COOKIE_NAME = "tipping_csrf"
 BOOTSTRAP_CSRF_MAX_AGE_SECONDS = 900
+GUEST_SESSION_COOKIE_NAME = "tipping_guest_session"
+GUEST_CSRF_COOKIE_NAME = "tipping_guest_csrf"
+GUEST_BOOTSTRAP_COOKIE_NAME = "tipping_guest_bootstrap"
 
 
 class AppSettings(BaseSettings):
@@ -44,6 +49,44 @@ class AppSettings(BaseSettings):
         "http://localhost:8000,http://localhost:5173,http://localhost:3000"
     )
     session_ttl_hours: int = 12
+    guest_session_ttl_hours: int = Field(default=24, ge=1, le=168)
+    authorization_safety_buffer_hours: int = Field(default=6, ge=1, le=24)
+    paypal_expected_payee: str | None = Field(
+        default=None, validation_alias=AliasChoices(
+            "PAYPAL_EXPECTED_PAYEE", "TIPPING_POINT_PAYPAL_EXPECTED_PAYEE", "paypal_expected_payee"
+        )
+    )
+    public_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("APP_PUBLIC_URL", "TIPPING_POINT_PUBLIC_URL", "public_url")
+    )
+
+    @field_validator("public_url")
+    @classmethod
+    def validate_public_origin(cls, value):
+        if value is None:
+            return None
+        parts = urlsplit(value)
+        try:
+            loopback = ipaddress.ip_address(parts.hostname or "").is_loopback
+        except ValueError:
+            loopback = parts.hostname == "localhost"
+        if (
+            not parts.hostname or parts.username or parts.password
+            or parts.path not in ("", "/") or parts.query or parts.fragment
+            or (parts.scheme != "https" and not (parts.scheme == "http" and loopback))
+        ):
+            raise ValueError("public_url must be a bare HTTPS origin or local loopback HTTP origin")
+        # Force validation of a malformed/out-of-range port.
+        parts.port
+        return value.rstrip("/")
+
+    @property
+    def reservations_configured(self) -> bool:
+        return bool(
+            self.has_paypal_credentials and self.paypal_expected_payee
+            and self.paypal_expected_payee.strip() and self.public_url
+            and (self.environment == "local" or self.public_url.startswith("https://"))
+        )
     throttle_max_failures: int = 5
     throttle_window_minutes: int = 15
 
@@ -146,6 +189,8 @@ class AppSettings(BaseSettings):
 
     def validate_startup(self) -> None:
         """Refuse unsafe hosted or unapproved insecure cookie configurations."""
+        if self.environment == "hosted" and self.public_url and not self.public_url.startswith("https://"):
+            raise RuntimeError("hosted public_url must use HTTPS")
         if not self.cookie_secure:
             if self.environment != "local" or not self.allow_insecure_dev_cookies:
                 raise RuntimeError(

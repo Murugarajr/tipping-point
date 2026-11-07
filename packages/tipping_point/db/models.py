@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .engine import Base
+from .guest_models import Booking, BookingEvent, GuestSession, PaymentOperation
 
 
 def _utcnow() -> datetime:

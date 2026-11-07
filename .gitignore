@@ -65,6 +65,8 @@ coverage.xml
 
 # Node.js
 node_modules/
+.worktrees/
+.private/guest-slice/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

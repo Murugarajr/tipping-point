@@ -13,7 +13,7 @@ PUBLIC_KEYS = {
     "workshop_id", "campaign_id", "title", "description", "currency",
     "ticket_price_minor", "capacity", "opens_at", "cutoff_at",
     "publication_status", "booking_window_status", "reservations_available",
-    "availability_note",
+    "availability_note", "availability_reason", "available_seats",
 }
 
 

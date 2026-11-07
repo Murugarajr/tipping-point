@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .api import auth_routes, material_routes, public_routes, workshop_routes
+from .api import auth_routes, guest_routes, material_routes, public_routes, workshop_routes
 from .settings import AppSettings
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -58,13 +58,20 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             origin = request.headers.get("origin")
             if origin is not None and origin not in settings.origins:
                 response = JSONResponse(
-                    status_code=403, content={"detail": "origin not allowed"}
+                    status_code=403, content={"detail": (
+                        {"code": "ORIGIN_NOT_ALLOWED", "message": "Origin not allowed."}
+                        if request.url.path.startswith(("/api/guest/", "/api/bookings/", "/api/campaigns/"))
+                        else "origin not allowed"
+                    )}
                 )
                 if request.url.path in _AUTH_PATHS or request.url.path.startswith("/api/merchant/"):
                     response.headers["Cache-Control"] = "no-store"
                     response.headers["Pragma"] = "no-cache"
                 return response
         response = await call_next(request)
+        if request.url.path.startswith(("/api/guest/", "/api/bookings/", "/api/campaigns/")):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
         if request.url.path in _AUTH_PATHS or request.url.path.startswith("/api/merchant/"):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
@@ -74,6 +81,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app.include_router(workshop_routes.router)
     app.include_router(material_routes.router)
     app.include_router(public_routes.router)
+    app.include_router(guest_routes.router)
 
     @app.get("/health/live")
     async def health_live():

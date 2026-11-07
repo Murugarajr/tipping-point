@@ -57,10 +57,10 @@ export function formatPrice(minor: number) {
 }
 
 export const faqs = [
-  ["Do I need an account?", "Not to explore. You can browse workshop information without signing in. The guest continuation form is currently a preview, not an active booking service. Hosts sign in separately."],
+  ["Do I need an account?", "Not to explore. You can browse workshop information without signing in. Eligible published workshops support guest Sandbox reservations using a server-issued session. The standalone form remains a preview, not an active booking service. Hosts sign in separately."],
   ["What is a workshop’s tipping point?", "It is the first attendance level at which the approved cost assumptions can be covered. Materials bought in packs can change the costs at higher attendance, so the actual booked group still needs its own checks."],
-  ["Am I charged immediately?", "No payments can be made through this preview. In the intended Sandbox booking flow, you approve a payment authorization rather than an immediate completed charge. A temporary hold may appear; authorization is not collection."],
+  ["Am I charged immediately?", "Examples and standalone previews cannot authorize payments. For eligible published workshops, you approve a Sandbox payment authorization rather than an immediate completed charge. A temporary hold may appear; authorization is not collection."],
   ["What happens if it cannot run?", "The intended flow releases open authorizations. If payments have already been collected during an unsuccessful settlement, they require a compensating refund process. Releases and refunds are not instantaneous; unresolved outcomes need review."],
-  ["Can I use this as a host?", "The existing host workspace supports provisioned merchant accounts, workshop drafts, server-calculated cost previews and publication. Public registration, guest bookings and the complete payment journey are not enabled."],
+  ["Can I use this as a host?", "The existing host workspace supports provisioned merchant accounts, workshop drafts, server-calculated cost previews and publication. Eligible guest Sandbox reservations are supported. Public host registration, collection and the complete settlement journey are not enabled."],
   ["Is this currently a real-money service?", "No. Tipping Point is a PayPal Sandbox prototype. It does not accept real payments, and the example workshops on this site are not bookable inventory."],
 ] as const;

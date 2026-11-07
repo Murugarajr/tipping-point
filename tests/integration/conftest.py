@@ -70,6 +70,10 @@ class _OwnedRecords:
         self.credentials: set = set()
         self.sessions: set = set()
         self.offer_snapshots: set = set()
+        self.guest_sessions: set = set()
+        self.bookings: set = set()
+        self.payment_operations: set = set()
+        self.booking_events: set = set()
 
     def add(self, model, row_id) -> None:
         """Register a record (or an owned root) created by this test."""
@@ -88,6 +92,14 @@ class _OwnedRecords:
             self.sessions.add(row_id)
         elif name == "MaterialOfferSnapshot":
             self.offer_snapshots.add(row_id)
+        elif name == "GuestSession":
+            self.guest_sessions.add(row_id)
+        elif name == "Booking":
+            self.bookings.add(row_id)
+        elif name == "PaymentOperation":
+            self.payment_operations.add(row_id)
+        elif name == "BookingEvent":
+            self.booking_events.add(row_id)
         else:  # pragma: no cover - guards against silent misregistration
             raise TypeError(f"unsupported model for registration: {name}")
 
@@ -104,11 +116,15 @@ def owned(migrated_database) -> _OwnedRecords:
     """
     from tipping_point.db.models import (
         Campaign,
+        Booking,
+        BookingEvent,
         CampaignTerms,
         MaterialOfferSnapshot,
         Merchant,
         MerchantCredential,
         MerchantSession,
+        GuestSession,
+        PaymentOperation,
         Workshop,
     )
     from tipping_point.db.session import session_scope
@@ -151,6 +167,38 @@ def owned(migrated_database) -> _OwnedRecords:
                     MerchantCredential.id.in_(registry.credentials)
                 )
             )
+            session.flush()
+        campaign_ids = set(registry.campaigns)
+        if workshop_ids:
+            campaign_ids.update(session.scalars(select(Campaign.id).where(
+                Campaign.workshop_id.in_(workshop_ids)
+            )))
+        booking_ids = set(registry.bookings)
+        if campaign_ids or registry.guest_sessions:
+            booking_ids.update(session.scalars(select(Booking.id).where(
+                (Booking.campaign_id.in_(campaign_ids))
+                | (Booking.guest_session_id.in_(registry.guest_sessions))
+            )))
+        operation_ids = set(registry.payment_operations)
+        if booking_ids:
+            operation_ids.update(session.scalars(select(PaymentOperation.id).where(
+                PaymentOperation.booking_id.in_(booking_ids)
+            )))
+        if booking_ids or operation_ids or registry.booking_events:
+            session.execute(delete(BookingEvent).where(
+                (BookingEvent.booking_id.in_(booking_ids))
+                | (BookingEvent.operation_id.in_(operation_ids))
+                | (BookingEvent.id.in_(registry.booking_events))
+            ))
+            session.flush()
+        if operation_ids:
+            session.execute(delete(PaymentOperation).where(PaymentOperation.id.in_(operation_ids)))
+            session.flush()
+        if booking_ids:
+            session.execute(delete(Booking).where(Booking.id.in_(booking_ids)))
+            session.flush()
+        if registry.guest_sessions:
+            session.execute(delete(GuestSession).where(GuestSession.id.in_(registry.guest_sessions)))
             session.flush()
         snapshot_ids = set(registry.offer_snapshots)
         if snapshot_ids or workshop_ids:

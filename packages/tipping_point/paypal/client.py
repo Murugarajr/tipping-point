@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from time import monotonic
 from typing import TYPE_CHECKING
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import httpx
 
@@ -245,6 +245,8 @@ class PayPalOrder:
     authorizations: tuple[PayPalAuthorizationSummary, ...]
     captures: tuple[PayPalCaptureSummary, ...]
     retrieved_at: datetime
+    purchase_unit_count: int = 0
+    payee_identifiers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -421,6 +423,7 @@ def parse_order(payload: object, *, retrieved_at: datetime | None = None) -> Pay
         raise PayPalResponseError("PayPal order response was missing id")
     reference_id: str | None = None
     payee_identifier: str | None = None
+    payee_identifiers: tuple[str, ...] = ()
     money: PayPalMoney | None = None
     purchase_units = payload.get("purchase_units")
     if isinstance(purchase_units, list) and purchase_units:
@@ -429,6 +432,10 @@ def parse_order(payload: object, *, retrieved_at: datetime | None = None) -> Pay
             reference_id = _clean_str(first_unit.get("reference_id"))
             payee = first_unit.get("payee")
             if isinstance(payee, dict):
+                payee_identifiers = tuple(
+                    value for key in ("merchant_id", "email_address")
+                    if (value := _clean_str(payee.get(key))) is not None
+                )
                 payee_identifier = _clean_str(payee.get("merchant_id")) or _clean_str(
                     payee.get("email_address")
                 )
@@ -438,7 +445,7 @@ def parse_order(payload: object, *, retrieved_at: datetime | None = None) -> Pay
         (
             link.href
             for link in _parse_links(payload.get("links"))
-            if link.rel == "approve"
+            if link.rel in ("approve", "payer-action")
         ),
         None,
     )
@@ -454,6 +461,8 @@ def parse_order(payload: object, *, retrieved_at: datetime | None = None) -> Pay
         authorizations=authorizations,
         captures=captures,
         retrieved_at=retrieved_at or datetime.now(timezone.utc),
+        purchase_unit_count=len(purchase_units) if isinstance(purchase_units, list) else 0,
+        payee_identifiers=payee_identifiers,
     )
 
 
@@ -495,6 +504,54 @@ def parse_authorization(
         links=_parse_links(payload.get("links")),
         retrieved_at=retrieved_at or datetime.now(timezone.utc),
     )
+
+
+def build_authorization_order_payload(
+    *, reference_id: str, amount_minor: int, currency: str,
+    description: str | None = None, expected_payee: str | None = None,
+    return_url: str | None = None, cancel_url: str | None = None,
+) -> dict:
+    """Pure canonical create payload shared by durable operations and gateway."""
+    reference = _require_reference_id(reference_id)
+    currency_minor_exponent(currency)
+    currency = currency.strip().upper()
+    if isinstance(amount_minor, bool) or not isinstance(amount_minor, int) or amount_minor <= 0:
+        raise ValueError("amount_minor must be a positive integer")
+    unit = {
+        "reference_id": reference,
+        "amount": {"currency_code": currency, "value": format_minor_to_amount(amount_minor, currency)},
+    }
+    if description is not None:
+        description = description.strip()
+        if not description or len(description) > PAYPAL_MAX_DESCRIPTION_LENGTH:
+            raise ValueError("description must be non-empty and within provider limits")
+        unit["description"] = description
+    if expected_payee:
+        key = "email_address" if "@" in expected_payee else "merchant_id"
+        unit["payee"] = {key: expected_payee}
+    body = {"intent": PAYPAL_INTENT_AUTHORIZE, "purchase_units": [unit]}
+    if return_url is not None or cancel_url is not None:
+        if not return_url or not cancel_url:
+            raise ValueError("both callback URLs are required")
+        body["payment_source"] = {"paypal": {"experience_context": {
+            "return_url": return_url, "cancel_url": cancel_url,
+            "shipping_preference": "NO_SHIPPING", "user_action": "CONTINUE",
+        }}}
+    return body
+
+
+def validate_sandbox_approve_url(url: str | None, order_id: str) -> str:
+    """Only expose the provider's exact Sandbox wallet URL for this order."""
+    if not url:
+        raise ValueError("missing PayPal approval link")
+    parts = urlsplit(url)
+    if (
+        parts.scheme != "https" or parts.netloc != "www.sandbox.paypal.com"
+        or parts.username or parts.password or parts.fragment
+        or parse_qs(parts.query).get("token") != [order_id]
+    ):
+        raise ValueError("invalid PayPal Sandbox approval link")
+    return url
 
 
 class PayPalGateway:
@@ -760,6 +817,9 @@ class PayPalGateway:
         description: str | None = None,
         operation_id: str,
         retrieved_at: datetime | None = None,
+        expected_payee: str | None = None,
+        return_url: str | None = None,
+        cancel_url: str | None = None,
     ) -> PayPalOrder:
         """Create an AUTHORIZE-intent order for exactly one guest booking.
 
@@ -770,31 +830,11 @@ class PayPalGateway:
         authorization; admission control stays in the service layer.
         """
         _require_operation_id(operation_id)
-        reference = _require_reference_id(reference_id)
-        currency_minor_exponent(currency)
-        normalized_currency = currency.strip().upper()
-        if isinstance(amount_minor, bool) or not isinstance(amount_minor, int):
-            raise ValueError("amount_minor must be an integer")
-        if amount_minor <= 0:
-            raise ValueError("amount_minor must be positive")
-        purchase_unit: dict[str, object] = {
-            "reference_id": reference,
-            "amount": {
-                "currency_code": normalized_currency,
-                "value": format_minor_to_amount(amount_minor, normalized_currency),
-            },
-        }
-        if description is not None:
-            normalized_description = description.strip()
-            if not normalized_description:
-                raise ValueError("description must be non-empty when provided")
-            if len(normalized_description) > PAYPAL_MAX_DESCRIPTION_LENGTH:
-                raise ValueError("description exceeds the provider length limit")
-            purchase_unit["description"] = normalized_description
-        body = {
-            "intent": PAYPAL_INTENT_AUTHORIZE,
-            "purchase_units": [purchase_unit],
-        }
+        body = build_authorization_order_payload(
+            reference_id=reference_id, amount_minor=amount_minor, currency=currency,
+            description=description, expected_payee=expected_payee,
+            return_url=return_url, cancel_url=cancel_url,
+        )
         response = await self._request(
             "POST",
             PAYPAL_ORDERS_PATH,
@@ -955,6 +995,8 @@ class PayPalGateway:
                 "void_authorization",
                 operation_id,
             ) from exc
+        if authorization.authorization_id != auth_id:
+            raise self._unknown_from_response_error("void_authorization", operation_id)
         return PayPalVoidResult(
             authorization_id=auth_id,
             status=authorization.status,

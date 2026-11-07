@@ -170,7 +170,12 @@ class PublicWorkshopOut(BaseModel):
     cutoff_at: datetime
     publication_status: str
     booking_window_status: Literal["not_open_yet", "open", "closed", "unavailable"]
-    reservations_available: Literal[False] = False
+    reservations_available: bool = False
+    availability_reason: Literal[
+        "available", "not_open_yet", "closed", "full", "payment_unconfigured",
+        "ineligible", "schema_unavailable",
+    ] = "payment_unconfigured"
+    available_seats: int | None = None
     availability_note: str = "Guest reservations and payments are not enabled in this prototype."
 
 

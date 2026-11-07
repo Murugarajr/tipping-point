@@ -1,0 +1,12 @@
+.guest-status-page { max-width: 1000px; margin-inline: auto; }
+.guest-status-page h1 { font-size: clamp(2.4rem, 5vw, 4.5rem); overflow-wrap: anywhere; }
+.guest-status-card { border: 1px solid var(--tp-line); border-radius: 1.2rem; padding: clamp(1rem, 4vw, 2.5rem); margin-block: 2rem; background: white; }
+.guest-status-card h2 { font-size: clamp(1.6rem, 4vw, 2.5rem); }
+.guest-status-page p, .guest-status-card dd { overflow-wrap: anywhere; }
+.guest-actions { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1.5rem; }
+.guest-actions .tp-button { white-space: normal; text-align: center; }
+.guest-connected input[readonly] { background: var(--tp-soft); }
+@media (max-width: 600px) {
+  .guest-actions { flex-direction: column; }
+  .guest-status-page > .tp-button { width: 100%; }
+}

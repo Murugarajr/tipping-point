@@ -4,6 +4,8 @@ import { Arrow, CraftArt, Mark, ThresholdArt } from "./Artwork";
 import { categories, faqs, filterWorkshops, findWorkshop, formatPrice } from "./content";
 import type { CategoryFilter, ExampleWorkshop } from "./content";
 import { PublishedCollection, PublishedDetail } from "./PublishedWorkshops";
+import { GuestContinue, GuestBookingStatus } from "../guest/GuestJourney";
+import { isPublishedId } from "../guest/model";
 
 function LinkButton({ href, children, secondary = false }: { href: string; children: ReactNode; secondary?: boolean }) {
   return <a className={`tp-button ${secondary ? "tp-button-secondary" : ""}`} href={href}>{children}<Arrow /></a>;
@@ -33,7 +35,7 @@ function Footer() {
     <div className="footer-top"><a className="wordmark" href="/"><Mark /><span>tipping point.</span></a><p>A good idea.<br />A few good people.<br />Something worth making.</p>
       <nav aria-label="Footer navigation"><a href="/workshops">Workshops</a><a href="/#how-it-works">How it works</a><a href="/host/login">Host sign in</a><a href="/example-plan">Example host plan</a></nav>
     </div>
-    <div className="footer-bottom"><p>Sandbox prototype. No real payments. Example workshops are not bookable.</p><details><summary>Privacy &amp; your data</summary><p>Public browsing needs no account. The guest preview keeps your email only in this page’s memory; it does not save or send it. Host sign-in uses server-issued session and CSRF cookies. Do not enter real payment information. No analytics or marketing signup is added by this frontend.</p></details><span>Made for making.</span></div>
+    <div className="footer-bottom"><p>Sandbox prototype. No real payments. Example workshops are not bookable.</p><details><summary>Privacy &amp; your data</summary><p>Public browsing needs no account. The standalone guest preview does not save or send email. Continuing a published reservation sends contact email to the server only on explicit submission. Guest access uses separate server-issued session and CSRF cookies; email does not recover bookings. Host sign-in uses merchant cookies. Do not enter real payment information. No analytics or marketing signup is added by this frontend.</p></details><span>Made for making.</span></div>
   </footer>;
 }
 
@@ -51,14 +53,14 @@ function Hero() {
       <div className="tile pottery-tile"><CraftArt craft="clay" /><span className="art-caption">Less scrolling.<br />More making.</span><span className="round-arrow" aria-hidden="true"><Arrow diagonal /></span></div>
       <div className="tile definition-tile"><span className="tile-index">The idea is simple.</span><h2>Every workshop<br />has a tipping<br />point<span>.</span></h2><p>Enough people to cover approved costs. Then a real check of the group and its payments.</p></div>
       <a className="tile blue-tile" href="/workshops"><span className="open-circle" aria-hidden="true"><Arrow diagonal /></span><strong>Curiosity first.<br />No account needed<br />to explore.</strong></a>
-      <div className="tile journey-tile"><span className="tiny-dot" aria-hidden="true" /><div><strong>From “I’m in” to “it’s on”.</strong><p>Reserve → check → confirm or unwind</p><span>Intended booking flow · not enabled yet</span></div></div>
+      <div className="tile journey-tile"><span className="tiny-dot" aria-hidden="true" /><div><strong>From “I’m in” to “it’s on”.</strong><p>Reserve → check → confirm or unwind</p><span>Sandbox authorization · eligible published workshops only</span></div></div>
     </div>
   </section>;
 }
 
 const steps = [
   ["Find your workshop.", "Browse creative sessions and see what you’ll make, learn and take away."],
-  ["Reserve your place.", "The intended guest flow uses a Sandbox payment authorization, not an immediate completed charge. Booking is not enabled yet."],
+  ["Reserve your place.", "Eligible published workshops support a Sandbox authorization, not an immediate completed charge. Examples cannot be booked."],
   ["Reach the booking decision.", "At the cutoff, check the actual booked group, approved costs and payment outcomes. Headcount alone is not confirmation."],
   ["Know where you stand.", "Confirm only after successful checks, or release authorizations and refund any collected payments through the appropriate process."],
 ] as const;
@@ -67,7 +69,7 @@ function HowItWorks() {
   return <section className="section how-section" id="how-it-works" aria-labelledby="how-title">
     <div className="section-heading"><div><p className="kicker">From a good idea to a full table</p><h2 id="how-title">A little clarity.<br />At every step.</h2></div><p>Less guesswork for hosts.<br />A clearer plan for everyone.</p></div>
     <ol className="steps">{steps.map(([title, text], index) => <li key={title}><span className="step-number">0{index + 1}<span aria-hidden="true">↗</span></span><h3>{title}</h3><p>{text}</p></li>)}</ol>
-    <details className="payment-details"><summary>One important distinction: authorized is not collected.<span aria-hidden="true">+</span></summary><div><p>A payment authorization may place a temporary hold. Approval alone is not authorization, and authorization is not payment collection. This prototype’s public pages do not perform any of these operations.</p><p>In the intended flow, all required captures must complete and the approved costs must still be covered before confirmation. Partial collection requires compensation. Release and refund timing depends on the provider; unresolved outcomes need review.</p></div></details>
+    <details className="payment-details"><summary>One important distinction: authorized is not collected.<span aria-hidden="true">+</span></summary><div><p>A payment authorization may place a temporary hold. Approval alone is not authorization, and authorization is not payment collection. Eligible published workshops offer explicit Sandbox order and authorization actions; browsing alone performs none.</p><p>In the intended flow, all required captures must complete and the approved costs must still be covered before confirmation. Partial collection requires compensation. Release and refund timing depends on the provider; unresolved outcomes need review.</p></div></details>
   </section>;
 }
 
@@ -113,12 +115,12 @@ function Difference() {
 function HostSection() {
   return <section className="section host-section" id="for-hosts" aria-labelledby="host-title">
     <div className="host-copy"><p className="kicker">For the people who bring people together</p><h2 id="host-title">You bring the idea.<br /><span>See what it takes<br />to run.</span></h2><p>A great workshop is more than a full room. It’s the right materials, a considered budget, and a plan you can explain.</p><div className="hero-actions"><LinkButton href="/host/login">Host sign in</LinkButton><a className="text-link" href="/example-plan">Explore an example plan<Arrow diagonal /></a></div><p className="small-copy">Existing provisioned hosts only. No public registration.</p></div>
-    <div className="host-plan-preview"><span className="outline-pill">The intended host journey</span><ol>{["Draft the experience", "Review materials & pack quantities", "Preview attendance & cost scenarios", "Publish clear, immutable terms", "Track readiness & payment outcomes"].map((text, index) => <li key={text}><span>0{index + 1}</span>{text}<Arrow diagonal /></li>)}</ol><p>Drafts, server previews and publication exist today. Readiness and guest payment tracking are still planned.</p></div>
+    <div className="host-plan-preview"><span className="outline-pill">The intended host journey</span><ol>{["Draft the experience", "Review materials & pack quantities", "Preview attendance & cost scenarios", "Publish clear, immutable terms", "Track readiness & payment outcomes"].map((text, index) => <li key={text}><span>0{index + 1}</span>{text}<Arrow diagonal /></li>)}</ol><p>Drafts, server previews and publication exist today. Guest Sandbox reservation status is available; readiness and collection remain planned.</p></div>
   </section>;
 }
 
 const integrations = [
-  ["PayPal Sandbox", "Backend adapter", "Authorization-intent orders, authorization and void operations in server code. Offline tests exist; no live verification claimed here. Guest checkout is not connected."],
+  ["PayPal Sandbox", "Backend adapter", "Authorization-intent orders, authorization and void operations in server code. Offline tests exist; no live verification claimed here. Guest checkout connects eligible published workshops to Sandbox authorization. No live verification is claimed by this frontend."],
   ["Channel3", "Backend adapter", "Material-offer search and selection code exists. Live contract verification remains incomplete; examples on this page are not Channel3 results."],
   ["AG Studio / AG Grid", "Planned", "Host analytics, a Tipping Meter and bounded scenario analysis. No Studio component is installed in this frontend."],
   ["Bryntum", "Planned", "An operational dependency timeline for workshop readiness. The example plan is editorial content, not a Bryntum integration."],
@@ -175,7 +177,7 @@ function ExamplePlan() {
     ["Draft the experience", "Describe the activity, venue, duration and what guests should expect.", "Supported in host workspace"],
     ["Review the materials", "Review sourced offers, pack quantities and shipping assumptions. Offers do not reserve supplier stock.", "Backend selection exists · live verification incomplete"],
     ["Preview the decision", "Use the backend cost curve for the actual attendance. This example does not calculate or publish a threshold.", "Server calculator exists"],
-    ["Publish clear terms", "Freeze the reviewed terms and a short booking window before accepting reservations.", "Host publication exists · guest booking unavailable"],
+    ["Publish clear terms", "Freeze the reviewed terms and a short booking window before accepting reservations.", "Host publication exists · eligible guest Sandbox reservations"],
     ["Check, then prepare", "At cutoff, check the booked cohort and payment results. Confirm only after collection and financial checks; otherwise unwind safely.", "Settlement & readiness journey planned"],
   ].map(([title, description, status], index) => <li key={title}><span className="plan-number">0{index + 1}</span><div><h2>{title}</h2><p>{description}</p><span className="plan-status">{status}</span></div></li>)}</ol><LinkButton href="/host/login">Go to host sign in</LinkButton></section>;
 }
@@ -196,7 +198,14 @@ export default function PublicApp({ path }: { path: string }) {
     page = workshop ? <Detail workshop={workshop} /> : publishedReference ? <PublishedDetail id={id} /> : <NotFound />;
     title = workshop?.title ?? (publishedReference ? "Published workshop" : "Page not found");
   }
-  else if (path === "/continue") { page = <GuestPreview />; title = "Guest-flow preview"; }
+  else if (path === "/continue") {
+    const id = new URLSearchParams(window.location.search).get("workshop");
+    page = isPublishedId(id) ? <GuestContinue key={id} id={id} /> : <GuestPreview />; title = isPublishedId(id) ? "Continue as guest" : "Guest-flow preview";
+  }
+  else if (/^\/bookings\/[^/]+(?:\/paypal\/(?:return|cancel))?$/.test(path)) {
+    const parts = path.split("/");
+    page = isPublishedId(parts[2]) ? <GuestBookingStatus key={parts[2]} id={parts[2]} suffix={parts[4] as "return" | "cancel" | undefined} /> : <NotFound />; title = "Guest reservation status";
+  }
   else if (path === "/example-plan") { page = <ExamplePlan />; title = "An example host plan"; }
   else { page = <NotFound />; title = "Page not found"; }
   useEffect(() => { document.title = `${title} | Tipping Point`; }, [title]);
