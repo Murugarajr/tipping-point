@@ -91,6 +91,54 @@ class AppSettings(BaseSettings):
     throttle_max_failures: int = 5
     throttle_window_minutes: int = 15
 
+    # Remote (Render Workflow) financial execution is OFF unless explicitly
+    # enabled server-side. "campaign_allowlist" limits it to the exact campaign
+    # UUIDs below; "enabled" permits all due, non-cleanup settlement work.
+    remote_settlement_mode: Literal["disabled", "campaign_allowlist", "enabled"] = "disabled"
+    remote_settlement_campaign_ids: str = ""
+    # Render Workflow service slug used to build task slugs "{slug}/{task}".
+    render_workflow_slug: str | None = Field(
+        default=None, validation_alias=AliasChoices(
+            "TIPPING_POINT_RENDER_WORKFLOW_SLUG", "RENDER_WORKFLOW_SLUG", "render_workflow_slug"),
+    )
+    dispatch_batch_limit: int = Field(default=10, ge=1, le=40)
+    # Same-origin hosting: serve the built React app from this directory
+    # (relative to the working directory). Opt-in; local Vite dev is unaffected.
+    serve_frontend: bool = False
+    frontend_dist: str = "frontend/dist"
+
+    @field_validator("remote_settlement_campaign_ids")
+    @classmethod
+    def validate_campaign_allowlist(cls, value: str) -> str:
+        import uuid
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        try:
+            return ",".join(str(uuid.UUID(item)) for item in items)
+        except ValueError:
+            raise ValueError("remote_settlement_campaign_ids must be comma-separated campaign UUIDs") from None
+
+    @field_validator("render_workflow_slug")
+    @classmethod
+    def validate_workflow_slug(cls, value: str | None) -> str | None:
+        import re
+        if value is None or not value.strip():
+            return None
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", value.strip()):
+            raise ValueError("render_workflow_slug must be a lowercase Render service slug")
+        return value.strip()
+
+    @property
+    def remote_settlement_campaigns(self) -> frozenset[str]:
+        return frozenset(item for item in self.remote_settlement_campaign_ids.split(",") if item)
+
+    def remote_settlement_permits(self, campaign_id: str) -> bool:
+        """Server-side gate for remote financial execution of one campaign."""
+        if self.remote_settlement_mode == "enabled":
+            return True
+        if self.remote_settlement_mode == "campaign_allowlist":
+            return campaign_id in self.remote_settlement_campaigns
+        return False
+
     channel3_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -182,16 +230,20 @@ class AppSettings(BaseSettings):
     @property
     def origins(self) -> frozenset[str]:
         """Configured browser origins; wildcard credentialed CORS is never enabled."""
-        return frozenset(
-            origin.strip()
-            for origin in self.allowed_origins.split(",")
-            if origin.strip()
-        )
+        configured = {origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()}
+        # The application's own public origin is always a permitted browser origin.
+        if self.public_url:
+            configured.add(self.public_url)
+        return frozenset(configured)
 
     def validate_startup(self) -> None:
         """Refuse unsafe hosted or unapproved insecure cookie configurations."""
         if self.environment == "hosted" and self.public_url and not self.public_url.startswith("https://"):
             raise RuntimeError("hosted public_url must use HTTPS")
+        if self.environment == "hosted" and self.allow_insecure_dev_cookies:
+            raise RuntimeError("hosted environments must not allow insecure development cookies")
+        if self.remote_settlement_mode == "campaign_allowlist" and not self.remote_settlement_campaigns:
+            raise RuntimeError("campaign_allowlist remote settlement requires at least one campaign UUID")
         if not self.cookie_secure:
             if self.environment != "local" or not self.allow_insecure_dev_cookies:
                 raise RuntimeError(

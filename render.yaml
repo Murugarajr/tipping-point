@@ -1,0 +1,117 @@
+# Render Blueprint for Tipping Point (PayPal Sandbox only).
+# PREPARED, NOT APPLIED. Creating these resources, setting secrets, migrating the
+# cloud database and enabling remote financial execution each need approval.
+#
+# Topology: one same-origin web service (FastAPI + built React), one Render
+# Postgres database (private network only), one Workflow service (task bodies
+# reuse the shared settlement services), and one cron dispatcher that submits
+# due settlement work to the Workflow service.
+#
+# Secrets use `sync: false` (prompted at Blueprint creation, never stored here).
+# The cloud database is migrated manually after approval (no preDeployCommand):
+#   python -m alembic upgrade head    # from a Render Shell on the web service
+
+databases:
+  - name: tipping-point-db
+    databaseName: tipping_point
+    user: tipping_point_app
+    plan: 0.1c-256mb          # paid, non-expiring; free Postgres expires after 30 days
+    region: frankfurt
+    postgresMajorVersion: "17"
+    ipAllowList: []           # no external connections; services use the private network
+
+services:
+  - type: web
+    name: tipping-point-web
+    runtime: python
+    region: frankfurt
+    plan: 0.5c-512mb
+    buildCommand: pip install -r requirements.txt && pip install --no-deps . && node --version && npm --prefix frontend ci && npm --prefix frontend run build
+    startCommand: python -m uvicorn tipping_point.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    envVars:
+      - key: TIPPING_POINT_DATABASE_URL
+        fromDatabase:
+          name: tipping-point-db
+          property: connectionString
+      - key: TIPPING_POINT_ENV
+        value: hosted
+      - key: TIPPING_POINT_COOKIE_SECURE
+        value: "true"
+      - key: TIPPING_POINT_ALLOW_INSECURE_DEV_COOKIES
+        value: "false"
+      - key: TIPPING_POINT_SERVE_FRONTEND
+        value: "true"
+      - key: APP_PUBLIC_URL               # exact https://<web host> origin; always an allowed origin
+        sync: false
+      - key: TIPPING_POINT_ALLOWED_ORIGINS  # no extra origins hosted (overrides localhost defaults)
+        value: ""
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_EXPECTED_PAYEE
+        sync: false
+      - key: CHANNEL3_API_KEY
+        sync: false
+      - key: TIPPING_POINT_REMOTE_SETTLEMENT_MODE
+        value: disabled
+
+  - type: workflow
+    name: tipping-point-workflows
+    runtime: python
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt -r requirements-render.txt && pip install --no-deps .
+    startCommand: python -m tipping_point.workflows.render_app
+    envVars:
+      - key: TIPPING_POINT_DATABASE_URL
+        fromDatabase:
+          name: tipping-point-db
+          property: connectionString
+      - key: TIPPING_POINT_ENV
+        value: hosted
+      - key: TIPPING_POINT_COOKIE_SECURE
+        value: "true"
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_EXPECTED_PAYEE
+        sync: false
+      - key: TIPPING_POINT_REMOTE_SETTLEMENT_MODE   # disabled | campaign_allowlist | enabled
+        value: disabled
+      - key: TIPPING_POINT_REMOTE_SETTLEMENT_CAMPAIGN_IDS
+        value: ""
+
+  - type: cron
+    name: tipping-point-dispatcher
+    runtime: python
+    region: frankfurt
+    plan: 0.5c-512mb
+    schedule: "* * * * *"     # UTC; Render never overlaps runs of one cron job
+    buildCommand: pip install -r requirements.txt -r requirements-render.txt && pip install --no-deps .
+    startCommand: python -m tipping_point.workflows.dispatcher
+    envVars:
+      - key: TIPPING_POINT_DATABASE_URL
+        fromDatabase:
+          name: tipping-point-db
+          property: connectionString
+      - key: TIPPING_POINT_ENV
+        value: hosted
+      - key: TIPPING_POINT_COOKIE_SECURE
+        value: "true"
+      - key: RENDER_API_KEY
+        sync: false
+      - key: TIPPING_POINT_RENDER_WORKFLOW_SLUG   # the workflow's actual slug, not assumed from its name
+        fromService:
+          type: workflow
+          name: tipping-point-workflows
+          property: slug
+      - key: TIPPING_POINT_REMOTE_SETTLEMENT_MODE
+        value: disabled
+      - key: TIPPING_POINT_REMOTE_SETTLEMENT_CAMPAIGN_IDS
+        value: ""

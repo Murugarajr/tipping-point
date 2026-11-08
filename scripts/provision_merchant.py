@@ -17,6 +17,7 @@ import sys
 import uuid
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import make_url
 
 from tipping_point.auth.passwords import hash_password
 from tipping_point.db.config import DatabaseConfig
@@ -46,14 +47,15 @@ def _prompt_password() -> str:
 
 
 def main() -> None:
-    cfg = DatabaseConfig()
-    if cfg.name in ALLOWED_TEST_DATABASES:
+    # Effective target, including a hosted TIPPING_POINT_DATABASE_URL (password never printed).
+    target = make_url(DatabaseConfig().database_url)
+    if target.database in ALLOWED_TEST_DATABASES:
         sys.exit(
             f"refusing to provision real credentials against the test "
-            f"database {cfg.name!r}; run against the development database"
+            f"database {target.database!r}; run against the development database"
         )
 
-    print(f"target database: {cfg.name} at {cfg.host}:{cfg.port}")
+    print(f"target database: {target.database} at {target.host}:{target.port}")
     name = _prompt("Merchant display name: ")
     login = _prompt("Login identifier (lowercase): ").lower()
     if not LOGIN_PATTERN.match(login):

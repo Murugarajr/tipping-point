@@ -19,6 +19,8 @@ TEST_ENV_OVERRIDES: dict[str, str] = {
     f"{TEST_ENV_PREFIX}USER": TEST_USER,
     f"{TEST_ENV_PREFIX}PASSWORD": "",
     f"{TEST_ENV_PREFIX}NAME": TEST_DATABASE,
+    # A hosted connection string must never redirect tests away from the test DB.
+    f"{TEST_ENV_PREFIX}DATABASE_URL": "",
 }
 
 _saved_overrides: dict[str, str | None] = {}
