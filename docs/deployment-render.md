@@ -69,7 +69,7 @@ https://github.com/render-examples/render-workflows-examples-python
 | `packages/tipping_point/workflows/tasks.py` | SDK-free task bodies: `settle_campaign_pass(campaign_id)` (one bounded `process_due(limit=1, campaign_id=…)` pass) and `readiness_report()` |
 | `packages/tipping_point/workflows/render_app.py` | Render Workflow entry point; registers `settle_campaign` (no Render-level retries) and `readiness_diagnostic` |
 | `packages/tipping_point/workflows/dispatcher.py` | Cron entry point; read-only selection of due non-cleanup work, `start_task` with deterministic idempotency keys |
-| `packages/tipping_point/app.py` | `/health/ready`; opt-in same-origin SPA serving (`TIPPING_POINT_SERVE_FRONTEND`) |
+| `packages/tipping_point/app.py` | `/health/live` (Render deploy health check: process liveness only) and `/health/ready` (database and schema; 503 until migrated, checked manually); opt-in same-origin SPA serving (`TIPPING_POINT_SERVE_FRONTEND`) |
 | `packages/tipping_point/db/config.py` | `TIPPING_POINT_DATABASE_URL` (PostgreSQL only) |
 | `render.yaml`, `.python-version`, `requirements-render.txt` | Deployment configuration |
 

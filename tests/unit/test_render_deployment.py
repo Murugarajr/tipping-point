@@ -114,6 +114,17 @@ def test_same_origin_frontend_serving_never_swallows_api_or_health(tmp_path):
                                frontend_dist=str(tmp_path / "missing")))
 
 
+def test_readiness_stays_503_before_migration_while_liveness_gates_deploys(monkeypatch):
+    from tipping_point.app import create_app
+    import tipping_point.workflows.tasks as tasks
+    unmigrated = {"database_reachable": True, "schema_revision_matches": False}
+    monkeypatch.setattr(tasks, "readiness_report", lambda **_: unmigrated)
+    client = TestClient(create_app(AppSettings(_env_file=None, allow_insecure_dev_cookies=True)))
+    ready = client.get("/health/ready")
+    assert ready.status_code == 503 and ready.json() == {"status": "not_ready", "database": True, "schema": False}
+    assert client.get("/health/live").status_code == 200  # the Render deploy health check
+
+
 def test_frontend_serving_is_opt_in():
     from tipping_point.app import create_app
     app = create_app(AppSettings(_env_file=None, allow_insecure_dev_cookies=True))
@@ -125,10 +136,11 @@ def test_render_blueprint_is_secret_free_and_matches_the_adapter():
     assert "type: workflow" in text and "type: cron" in text and "type: web" in text and "databases:" in text
     assert "python -m tipping_point.workflows.render_app" in text
     assert "python -m tipping_point.workflows.dispatcher" in text
-    assert "healthCheckPath: /health/ready" in text
+    assert "healthCheckPath: /health/live" in text and "healthCheckPath: /health/ready" not in text
     assert re.search(r"key: TIPPING_POINT_REMOTE_SETTLEMENT_MODE\s+value: disabled", text)
     assert re.search(r"key: TIPPING_POINT_RENDER_WORKFLOW_SLUG.*\n\s+fromService:\n\s+type: workflow\n\s+name: tipping-point-workflows\n\s+property: slug", text)
-    assert "PAYPAL_ENV" in text and "live" not in text.lower().replace("deliver", "")
+    no_live_mode = text.lower().replace("deliver", "").replace("/health/live", "").replace("liveness", "")
+    assert "PAYPAL_ENV" in text and "live" not in no_live_mode  # no live PayPal mode anywhere
     for secret in ("PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_EXPECTED_PAYEE", "RENDER_API_KEY", "CHANNEL3_API_KEY"):
         block = text[text.index(f"key: {secret}"):][:120]
         assert "sync: false" in block, secret

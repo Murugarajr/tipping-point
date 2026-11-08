@@ -28,7 +28,7 @@ services:
     plan: 0.5c-512mb
     buildCommand: pip install -r requirements.txt && pip install --no-deps . && node --version && npm --prefix frontend ci && npm --prefix frontend run build
     startCommand: python -m uvicorn tipping_point.app:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health/ready
+    healthCheckPath: /health/live   # liveness gate; /health/ready (503 until migrated) is checked manually
     envVars:
       - key: TIPPING_POINT_DATABASE_URL
         fromDatabase:
