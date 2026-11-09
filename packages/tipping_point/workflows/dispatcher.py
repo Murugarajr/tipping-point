@@ -56,19 +56,18 @@ def eligible_work(db, settings, *, now: datetime, limit: int) -> list[DueWork]:
     from ..db.models import SettlementWork
     from ..settlement.decision import CLEANUP_PURPOSE
 
-    if settings.remote_settlement_mode == "disabled":
+    if settings.remote_settlement_mode != "campaign_allowlist":
+        return []  # fail closed: only an exact allowlist ever selects work
+    allowed = sorted(settings.remote_settlement_campaigns)
+    if not allowed:
         return []
     query = select(SettlementWork.id, SettlementWork.campaign_id, SettlementWork.version).where(
+        SettlementWork.campaign_id.in_(allowed),
         SettlementWork.purpose != CLEANUP_PURPOSE,
         SettlementWork.due_at <= now,
         or_(SettlementWork.state == "READY",
             (SettlementWork.state == "LEASED") & (SettlementWork.lease_expires_at <= now)),
     )
-    if settings.remote_settlement_mode == "campaign_allowlist":
-        allowed = sorted(settings.remote_settlement_campaigns)
-        if not allowed:
-            return []
-        query = query.where(SettlementWork.campaign_id.in_(allowed))
     rows = db.execute(query.order_by(SettlementWork.due_at, SettlementWork.id).limit(limit)).all()
     return [DueWork(str(w), str(c), v) for w, c, v in rows]
 
@@ -81,8 +80,8 @@ def dispatch_due(client: Any, settings, *, session_factory: Callable | None = No
 
     now = now or utcnow()
     summary = {"mode": settings.remote_settlement_mode, "eligible": 0, "submitted": 0, "failed": 0, "runs": []}
-    if settings.remote_settlement_mode == "disabled":
-        log.info("dispatch skipped: remote settlement disabled")
+    if settings.remote_settlement_mode != "campaign_allowlist" or not settings.remote_settlement_campaigns:
+        log.info("dispatch skipped: remote settlement disabled or allowlist empty")
         return summary
     if not settings.render_workflow_slug:
         raise RuntimeError("TIPPING_POINT_RENDER_WORKFLOW_SLUG is required to dispatch")

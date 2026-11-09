@@ -92,9 +92,10 @@ class AppSettings(BaseSettings):
     throttle_window_minutes: int = 15
 
     # Remote (Render Workflow) financial execution is OFF unless explicitly
-    # enabled server-side. "campaign_allowlist" limits it to the exact campaign
-    # UUIDs below; "enabled" permits all due, non-cleanup settlement work.
-    remote_settlement_mode: Literal["disabled", "campaign_allowlist", "enabled"] = "disabled"
+    # enabled server-side, and then only for the exact campaign UUIDs below.
+    # There is deliberately no "all campaigns" mode: a backlog of overdue
+    # campaigns can never be processed by widening a setting.
+    remote_settlement_mode: Literal["disabled", "campaign_allowlist"] = "disabled"
     remote_settlement_campaign_ids: str = ""
     # Render Workflow service slug used to build task slugs "{slug}/{task}".
     render_workflow_slug: str | None = Field(
@@ -132,12 +133,13 @@ class AppSettings(BaseSettings):
         return frozenset(item for item in self.remote_settlement_campaign_ids.split(",") if item)
 
     def remote_settlement_permits(self, campaign_id: str) -> bool:
-        """Server-side gate for remote financial execution of one campaign."""
-        if self.remote_settlement_mode == "enabled":
-            return True
-        if self.remote_settlement_mode == "campaign_allowlist":
-            return campaign_id in self.remote_settlement_campaigns
-        return False
+        """Server-side gate for remote financial execution of one campaign: exact allowlist only.
+
+        An empty allowlist permits nothing, even if startup validation was bypassed.
+        """
+        if self.remote_settlement_mode != "campaign_allowlist":
+            return False
+        return campaign_id in self.remote_settlement_campaigns
 
     channel3_api_key: SecretStr | None = Field(
         default=None,

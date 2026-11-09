@@ -35,7 +35,10 @@ def readiness_diagnostic(ctx: TaskContext) -> dict:
 @app.task(name="settle_campaign", timeout_seconds=300,
           retry=Retry(max_retries=0, wait_duration_ms=1000))
 async def settle_campaign(ctx: TaskContext, campaign_id: str) -> dict:
-    return await settle_campaign_pass(campaign_id)
+    # The run's own ID (render==1.8.0 TaskContext.metadata.task_run_id) correlates logs and output with the
+    # dispatcher's submission; it is never used for authorization.
+    metadata = getattr(ctx, "metadata", None)
+    return await settle_campaign_pass(campaign_id, render_run_id=getattr(metadata, "task_run_id", None))
 
 
 if __name__ == "__main__":

@@ -118,9 +118,10 @@ def test_task_inputs_resolve_only_permitted_persisted_campaigns(settlement_case)
     other = str(uuid.uuid4())
     refused = asyncio.run(settle_campaign_pass(other, settings=settings, session_factory=refusing_session))
     assert refused["financial_execution"] == "refused" and refused["reason"] == "CAMPAIGN_NOT_ALLOWLISTED"
-    # Enabled mode with a non-persisted campaign: nothing to claim, nothing sent to PayPal.
-    unknown = run_task(case, other, configured(case, mode="enabled", campaigns=[]))
-    assert unknown["claimed"] is False and unknown["persisted_state"] == {"campaign": None, "work": None}
+    # An allowlisted but non-persisted campaign: nothing to claim, nothing sent to PayPal.
+    unknown = run_task(case, other, configured(case, campaigns=[other]))
+    assert unknown["claimed"] is False and unknown["persisted_state"] == {
+        "campaign": None, "work": None, "decision": None, "bookings": [], "payment_operations": []}
     assert case.provider.calls == []
 
 
@@ -232,7 +233,7 @@ def test_operator_cleanup_work_is_never_dispatched_or_claimed(settlement_case):
         request_cleanup(db, case.settings, req(case))
     cleanup = work(case)
     assert cleanup.purpose == CLEANUP_PURPOSE and cleanup.state == "READY"
-    settings = configured(case, mode="enabled", campaigns=[])
+    settings = configured(case)  # even with this exact campaign allowlisted
     with SessionLocal() as db:
         assert eligible_work(db, settings, now=utcnow() + timedelta(hours=1), limit=40) == []
     client = fake_client()

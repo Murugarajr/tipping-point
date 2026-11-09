@@ -82,7 +82,7 @@ services:
         sync: false
       - key: PAYPAL_EXPECTED_PAYEE
         sync: false
-      - key: TIPPING_POINT_REMOTE_SETTLEMENT_MODE   # disabled | campaign_allowlist | enabled
+      - key: TIPPING_POINT_REMOTE_SETTLEMENT_MODE   # disabled | campaign_allowlist (exact campaign UUIDs only)
         value: disabled
       - key: TIPPING_POINT_REMOTE_SETTLEMENT_CAMPAIGN_IDS
         value: ""
