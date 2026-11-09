@@ -46,6 +46,15 @@ class DueWork:
     version: int
 
 
+def remote_dispatch_permitted(settings) -> bool:
+    """Exact-allowlist gate shared by main() and dispatch_due(): an empty allowlist permits nothing."""
+    return settings.remote_settlement_mode == "campaign_allowlist" and bool(settings.remote_settlement_campaigns)
+
+
+def skipped_summary(settings) -> dict:
+    return {"mode": settings.remote_settlement_mode, "eligible": 0, "submitted": 0, "failed": 0, "runs": []}
+
+
 def idempotency_key(item: DueWork, now: datetime) -> str:
     bucket = int(now.timestamp()) // BUCKET_SECONDS
     return f"tp-settle:{item.work_id}:v{item.version}:b{bucket}"
@@ -79,8 +88,8 @@ def dispatch_due(client: Any, settings, *, session_factory: Callable | None = No
     from .tasks import _default_session
 
     now = now or utcnow()
-    summary = {"mode": settings.remote_settlement_mode, "eligible": 0, "submitted": 0, "failed": 0, "runs": []}
-    if settings.remote_settlement_mode != "campaign_allowlist" or not settings.remote_settlement_campaigns:
+    summary = skipped_summary(settings)
+    if not remote_dispatch_permitted(settings):  # defense in depth for direct callers
         log.info("dispatch skipped: remote settlement disabled or allowlist empty")
         return summary
     if not settings.render_workflow_slug:
@@ -116,15 +125,29 @@ def dispatch_due(client: Any, settings, *, session_factory: Callable | None = No
     return summary
 
 
-def main() -> None:  # pragma: no cover - exercised on Render with the installed SDK
+def main(*, settings=None, client_factory: Callable[[], Any] | None = None) -> dict:
+    """Cron entry point.
+
+    Settings and startup safety are checked first. When remote dispatch is not permitted (disabled mode),
+    it returns the all-zero skipped summary without importing or constructing the Render client (so no
+    RENDER_API_KEY is needed) and without touching the database layer.
+    """
     import json
-    from render import Render  # official Python SDK client; reads RENDER_API_KEY
     from ..settings import AppSettings
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
-    settings = AppSettings()
+    settings = settings or AppSettings()
     settings.validate_startup()
-    print(json.dumps(dispatch_due(Render(), settings)))
+    if not remote_dispatch_permitted(settings):
+        log.info("dispatch skipped before client setup: remote settlement disabled or allowlist empty")
+        summary = skipped_summary(settings)
+    else:
+        if client_factory is None:
+            from render import Render  # official Python SDK client; reads RENDER_API_KEY
+            client_factory = Render
+        summary = dispatch_due(client_factory(), settings)
+    print(json.dumps(summary))
+    return summary
 
 
 if __name__ == "__main__":  # pragma: no cover
