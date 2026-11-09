@@ -1,13 +1,19 @@
-import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import type { FormEvent, MouseEvent } from "react";
 import * as api from "../api";
 import type { HostVisibilityFilter, SessionInfo, Workshop, WorkshopVisibilityResult } from "../types";
 import { Arrow, Mark } from "../public/Artwork";
 import { navigate, useLocation } from "../navigation";
-import { displayDate, money, safeHostReturn, workshopRoute } from "./model";
+import { displayDate, intelligenceRoute, money, safeHostReturn, workshopRoute } from "./model";
 import Workbench from "./Workbench";
 import { VisibilityControl } from "./Visibility";
 import "./host.css";
+
+// Read-only AG Grid table view; its chunk (including AG Grid) loads only on /host/console.
+const MerchantConsole = lazy(() => import("./MerchantConsole"));
+// AG Studio Campaign Intelligence; its chunks load only on /host/workshops/{id}/intelligence.
+const CampaignIntelligence = lazy(() => import("./intelligence/CampaignIntelligence"));
+export const CONSOLE_PATH = "/host/console";
 
 type SessionState = "loading" | "anonymous" | "authenticated" | "expired" | "unavailable";
 export function Notice({ error }: { error: string | null }) {
@@ -91,6 +97,7 @@ export default function HostApp() {
   };
 
   const authenticated = state === "authenticated" && path !== "/host/login";
+  const intelligenceId = intelligenceRoute.exec(path)?.[1] ?? null;
   return <>
     {state === "loading" && <main className="host-shell host-loading"><h1>Checking your session…</h1></main>}
     {state === "unavailable" && <main className="merchant-auth login-shell"><section className="login-card"><a href="/">← Public browsing</a><h1>Host workspace unavailable.</h1><p role="alert">Your session could not be checked. This is not an invalid-credentials result.</p><button className="primary" onClick={() => window.location.reload()}>Try again</button></section></main>}
@@ -103,7 +110,9 @@ export default function HostApp() {
         {/* Kept mounted, but hidden, during same-host reauthentication only. */}
         {editorId && <Workbench key={`${owner.current}:${editorId}`} id={editorId} onUnauthorized={expire} />}
         {authenticated && !editorId && path === "/host" && <WorkshopList onUnauthorized={expire} />}
-        {authenticated && !editorId && path !== "/host" && <section className="host-panel"><h1>Workspace page not found.</h1><button className="host-button" onClick={() => navigate("/host")}>Your workshops</button></section>}
+        {authenticated && !editorId && path === CONSOLE_PATH && <Suspense fallback={<div className="host-panel" role="status">Loading table view…</div>}><MerchantConsole onUnauthorized={expire} /></Suspense>}
+        {authenticated && !editorId && intelligenceId && <Suspense fallback={<div className="host-panel" role="status">Loading Campaign Intelligence…</div>}><CampaignIntelligence key={`${owner.current}:${intelligenceId}`} id={intelligenceId} onUnauthorized={expire} /></Suspense>}
+        {authenticated && !editorId && path !== "/host" && path !== CONSOLE_PATH && !intelligenceId && <section className="host-panel"><h1>Workspace page not found.</h1><button className="host-button" onClick={() => navigate("/host")}>Your workshops</button></section>}
       </main>
     </div>
   </>;
@@ -134,6 +143,7 @@ function WorkshopList({ onUnauthorized }: { onUnauthorized: (cause: unknown) => 
   };
   return <section><div className="host-page-heading"><div><p className="host-kicker">Your workshops</p><h1>A clearer plan starts here.</h1><p>Draft the experience. Review the costs. Publish the terms.</p></div><button className="host-button" onClick={() => navigate("/host/workshops/new")}>Create draft<Arrow /></button></div>
     <div className="host-filter" role="group" aria-label="Filter workshops by discovery visibility">{FILTERS.map((item) => <button key={item.value} type="button" aria-pressed={filter === item.value} onClick={() => { setNotice(null); setFilter(item.value); }}>{item.label}</button>)}</div>
+    <p className="host-console-link"><a className="text-link" href={CONSOLE_PATH} onClick={(event: MouseEvent<HTMLAnchorElement>) => { event.preventDefault(); navigate(CONSOLE_PATH); }}>Table view<Arrow /></a></p>
     {notice && <p className="host-notice host-positive" role="status">{notice}</p>}
     {loading ? <div className="host-panel" role="status">Loading your owned workshops…</div>
       : error ? <div className="host-panel"><Notice error={error} /><button className="host-button secondary" onClick={() => void load()}>Try again</button></div>

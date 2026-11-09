@@ -1,0 +1,49 @@
+/* Campaign Intelligence page (AG Studio). Scoped; uses existing host tokens. */
+.campaign-intelligence .back-link a { text-decoration: none; display: inline-flex; min-height: 44px; align-items: center; }
+.campaign-intelligence .ci-mode { margin: 0; }
+.campaign-intelligence .ci-meta { margin: 0 0 16px; }
+.campaign-intelligence .ci-studio { height: 900px; border: 1px solid var(--tp-line); border-radius: 20px; overflow: hidden; background: white; }
+.campaign-intelligence .ci-capabilities { margin-top: 24px; }
+.campaign-intelligence .ci-capabilities ul { margin: 0; padding-left: 20px; color: var(--tp-muted); }
+.campaign-intelligence .ci-capabilities li { margin: 8px 0; }
+/* Global form rules must not leak into Studio's own controls. */
+.campaign-intelligence .ci-studio input, .campaign-intelligence .ci-studio select, .campaign-intelligence .ci-studio textarea { min-height: 0; margin: 0; border-radius: revert-layer; font-size: inherit; }
+.campaign-intelligence .ci-studio label { margin: 0; font-size: inherit; font-weight: inherit; }
+
+/* Tipping Meter custom widget */
+.tp-meter { height: 100%; box-sizing: border-box; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; font-family: var(--tp-font); color: var(--tp-ink); }
+.tp-meter > * { flex: none; }
+.tp-meter-state { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tp-muted); }
+.tp-meter-figures { display: flex; align-items: baseline; gap: 8px; }
+.tp-meter-big { font-size: 2.5rem; font-weight: 600; line-height: 1; }
+.tp-meter-of { color: var(--tp-muted); }
+.tp-meter-track { position: relative; height: 14px; border-radius: 100px; background: var(--tp-soft); border: 1px solid var(--tp-line); }
+.tp-meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: 100px; background: var(--tp-ink); }
+.tp-meter-threshold { position: absolute; top: -6px; bottom: -6px; width: 3px; margin-left: -1px; background: var(--tp-blue); border-radius: 2px; }
+.tp-meter-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 0; }
+.tp-meter-facts > div { margin: 0; }
+.tp-meter-facts dt { font-size: .75rem; color: var(--tp-muted); }
+.tp-meter-facts dd { margin: 2px 0 0; font-weight: 600; }
+.tp-meter-authorized dd { color: #705200; }
+.tp-meter-collected dd { color: #20592f; }
+.tp-meter-icon { display: inline-block; width: 16px; height: 16px; border-radius: 50%; background: conic-gradient(var(--tp-ink) 0 60%, var(--tp-line) 60% 100%); }
+
+/* Rescue Analyst panel */
+.ci-analyst { margin-top: 24px; }
+.ci-analyst-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.ci-analyst-head h2 { margin: 0; }
+.ci-analyst-connection { color: var(--tp-ink); background: var(--tp-soft); }
+.ci-analyst-suggestions { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 4px 0 12px; }
+.ci-analyst-suggestions .host-text-button { text-align: left; }
+.ci-analyst-turns { list-style: none; margin: 0; padding: 0; }
+.ci-analyst-turn { border-top: 1px solid var(--tp-line); padding: 16px 0; }
+.ci-analyst-question, .ci-analyst-answer p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ci-analyst-question .host-kicker, .ci-analyst-answer .host-kicker { display: block; margin-bottom: 4px; }
+.ci-analyst-answer { margin-top: 12px; }
+.ci-analyst-pending { color: var(--tp-muted); }
+.ci-analyst-activity { margin: 8px 0; color: var(--tp-muted); font-size: .9375rem; }
+.ci-analyst-activity summary { cursor: pointer; min-height: 32px; }
+.ci-analyst-activity ul { margin: 4px 0 0; padding-left: 20px; }
+.ci-analyst-form label { margin: 16px 0 8px; display: block; }
+.ci-analyst-form textarea { width: 100%; }
+.ci-analyst-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }

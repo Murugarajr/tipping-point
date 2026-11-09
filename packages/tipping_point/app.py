@@ -14,7 +14,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .api import auth_routes, guest_routes, material_routes, public_routes, workshop_routes
+from .analyst import AnalystLimiter
+from .api import analyst_routes, auth_routes, guest_routes, material_routes, public_routes, workshop_routes
 from .settings import AppSettings
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -46,6 +47,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.analyst_limiter = AnalystLimiter()
 
     @app.middleware("http")
     async def validate_browser_origin(request: Request, call_next):
@@ -79,6 +81,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     app.include_router(auth_routes.router)
     app.include_router(workshop_routes.router)
+    app.include_router(analyst_routes.router)
     app.include_router(material_routes.router)
     app.include_router(public_routes.router)
     app.include_router(guest_routes.router)

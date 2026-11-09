@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Literal
 from urllib.parse import urlsplit
 import ipaddress
+import re
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,8 @@ BOOTSTRAP_CSRF_MAX_AGE_SECONDS = 900
 GUEST_SESSION_COOKIE_NAME = "tipping_guest_session"
 GUEST_CSRF_COOKIE_NAME = "tipping_guest_csrf"
 GUEST_BOOTSTRAP_COOKIE_NAME = "tipping_guest_bootstrap"
+# Provider model slugs, e.g. "openai/gpt-4o-mini", "anthropic/claude-sonnet-4", "vendor/model:free".
+RESCUE_ANALYST_MODEL_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
 
 
 class AppSettings(BaseSettings):
@@ -161,6 +164,62 @@ class AppSettings(BaseSettings):
             "paypal_timeout_seconds",
         ),
     )
+
+    # Rescue Analyst (read-only, server-side model connection). Disabled unless explicitly
+    # enabled AND the selected provider's own key and a valid model id are configured.
+    # Missing configuration disables only the analyst, never the dashboard.
+    rescue_analyst_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "RESCUE_ANALYST_ENABLED", "TIPPING_POINT_RESCUE_ANALYST_ENABLED", "rescue_analyst_enabled"
+        ),
+    )
+    rescue_analyst_provider: Literal["openrouter", "openai"] = Field(
+        default="openrouter",
+        validation_alias=AliasChoices(
+            "RESCUE_ANALYST_PROVIDER", "TIPPING_POINT_RESCUE_ANALYST_PROVIDER", "rescue_analyst_provider"
+        ),
+    )
+    rescue_analyst_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "RESCUE_ANALYST_MODEL", "TIPPING_POINT_RESCUE_ANALYST_MODEL", "rescue_analyst_model"
+        ),
+    )
+    openrouter_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENROUTER_API_KEY", "TIPPING_POINT_OPENROUTER_API_KEY", "openrouter_api_key"),
+    )
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY", "TIPPING_POINT_OPENAI_API_KEY", "openai_api_key"),
+    )
+
+    @field_validator("rescue_analyst_model")
+    @classmethod
+    def validate_rescue_analyst_model(cls, value):
+        """A provider model slug only: no URL, whitespace, query or control characters."""
+        if value is None or not value.strip():
+            return None
+        value = value.strip()
+        if not RESCUE_ANALYST_MODEL_PATTERN.fullmatch(value) or "//" in value or ".." in value:
+            raise ValueError("rescue_analyst_model must be a provider model identifier such as vendor/model-name")
+        return value
+
+    def rescue_analyst_key(self) -> SecretStr | None:
+        """Only the selected provider's own credential; never the other provider's."""
+        key = self.openrouter_api_key if self.rescue_analyst_provider == "openrouter" else self.openai_api_key
+        return key if key is not None and key.get_secret_value().strip() else None
+
+    @property
+    def rescue_analyst_status(self) -> Literal["ready", "disabled", "missing_key", "missing_model"]:
+        if not self.rescue_analyst_enabled:
+            return "disabled"
+        if self.rescue_analyst_key() is None:
+            return "missing_key"
+        if not self.rescue_analyst_model:
+            return "missing_model"
+        return "ready"
 
     @property
     def has_channel3_credentials(self) -> bool:

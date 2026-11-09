@@ -154,3 +154,22 @@
 .host-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
 .host-filter button { border: 1px solid var(--tp-line); background: white; border-radius: 100px; padding: 8px 16px; font: inherit; cursor: pointer; }
 .host-filter button[aria-pressed=true] { background: var(--tp-ink); color: white; border-color: var(--tp-ink); }
+/* Read-only AG Grid table view (/host/console). Scoped so the card list and workbench are unaffected. */
+.host-console-link { margin: -8px 0 20px; }
+.host-console-link a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; text-decoration: underline; text-underline-offset: 4px; }
+.merchant-console .back-link a { text-decoration: none; display: inline-flex; min-height: 44px; align-items: center; }
+.console-grid { width: 100%; }
+/* .host-shell form rules (48px min-height, 8px radius, label margins) must not leak into AG Grid widgets;
+   AG Grid's own classes already win over the bare element rules in styles.css. */
+.console-grid .ag-root-wrapper input, .console-grid .ag-root-wrapper select { min-height: 0; margin: 0; border-radius: 6px; font-size: inherit; }
+.console-grid .ag-root-wrapper input:focus, .console-grid .ag-root-wrapper select:focus { outline: 2px solid var(--tp-blue); outline-offset: 0; }
+.console-grid .ag-root-wrapper label { margin: 0; font-size: inherit; font-weight: inherit; }
+.console-grid .console-title-link { font-weight: 600; text-decoration: underline; text-underline-offset: 3px; color: var(--tp-ink); }
+.console-grid .ag-cell:focus-visible, .console-grid .ag-cell-focus { outline: 2px solid var(--tp-blue); outline-offset: -2px; }
+.console-grid .console-unavailable { color: #8e2418; font-style: italic; }
+.console-partial .host-text-button { min-height: 0; padding: 0; font-size: inherit; color: inherit; }
+.console-notes { margin: 16px 0 0; display: grid; gap: 8px; }
+.console-notes > div { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; }
+.console-notes dt { font-size: .875rem; font-weight: 600; color: var(--tp-ink); }
+.console-notes dd { font-size: .875rem; font-weight: 400; color: var(--tp-muted); margin: 0; }
+.workbench-summary .ci-link { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 8px; text-decoration: underline; text-underline-offset: 4px; }
