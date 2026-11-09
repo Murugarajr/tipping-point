@@ -1,3 +1,4 @@
+import type { AnalystAnswer, AnalystStatus, ChatMessage } from "./host/intelligence/analystModel";
 import type { Campaign, DraftPayload, HostVisibilityFilter, SessionInfo, ViabilityPreview, Workshop, WorkshopDetail, WorkshopVisibilityResult, MaterialSearchResult, MaterialSelection, PublicWorkshop, GuestSession, GuestBooking } from "./types";
 
 export class ApiError extends Error {
@@ -121,6 +122,16 @@ export function searchMaterials(id: string, query: string): Promise<MaterialSear
 export function selectMaterial(id: string, payload: MaterialSelection): Promise<{ viability_preview: ViabilityPreview }> {
   return request(`/api/merchant/workshops/${encodeURIComponent(id)}/materials/select`, {
     method: "POST", body: JSON.stringify(payload),
+  }, true);
+}
+// Rescue Analyst: read-only. Status is GET; questions are a CSRF-protected POST whose body is only
+// bounded conversation text (no provider, model, URL, key, prompt or tools).
+export function getAnalystStatus(id: string): Promise<AnalystStatus> {
+  return request(`/api/merchant/workshops/${encodeURIComponent(id)}/intelligence/analyst`);
+}
+export function askAnalyst(id: string, messages: ChatMessage[], signal?: AbortSignal): Promise<AnalystAnswer> {
+  return request(`/api/merchant/workshops/${encodeURIComponent(id)}/intelligence/analyst`, {
+    method: "POST", body: JSON.stringify({ messages }), signal,
   }, true);
 }
 export function listPublicWorkshops(): Promise<PublicWorkshop[]> { return request("/api/workshops"); }

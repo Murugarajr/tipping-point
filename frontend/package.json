@@ -8,10 +8,16 @@
     "test": "node --experimental-transform-types --test tests/*.test.mjs",
     "test:browser": "npm run build && node tests/browser.mjs",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:console-browser": "npm run build && node tests/console-browser.mjs && CONSOLE_TEST_DEV=1 node tests/console-browser.mjs",
+    "test:intelligence-browser": "npm run build && node tests/intelligence-browser.mjs && INTELLIGENCE_TEST_DEV=1 node tests/intelligence-browser.mjs"
   },
   "type": "module",
   "dependencies": {
+    "ag-grid-community": "36.2.0",
+    "ag-grid-react": "36.2.0",
+    "ag-studio": "3.0.0",
+    "ag-studio-react": "3.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

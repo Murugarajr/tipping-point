@@ -11,7 +11,7 @@ test("GBP entry uses decimal-safe integer pence and rejects unsupported formats"
 
 test("return destinations are allowlisted internal host routes only", () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  for (const valid of ["/host", "/host/workshops/new", `/host/workshops/${id}#materials`]) assert.equal(safeHostReturn(valid), valid);
+  for (const valid of ["/host", "/host/console", "/host/workshops/new", `/host/workshops/${id}#materials`]) assert.equal(safeHostReturn(valid), valid);
   for (const invalid of [null, "https://evil.invalid", "//evil.invalid", "/host\\evil", "/host/login", "/host?x=1", "/host/../workshops", "/host/workshops/unknown", "/host/%2f%2fevil", "/continue"]) assert.equal(safeHostReturn(invalid), "/host");
   assert.equal(safeHostReturn(`/host/workshops/${id}#unknown`), `/host/workshops/${id}`);
 });
