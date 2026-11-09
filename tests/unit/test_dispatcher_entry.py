@@ -121,5 +121,6 @@ def test_dispatch_due_guard_still_protects_direct_callers():
         explicit_settings(remote_settlement_mode="enabled")
 
 
-def test_tests_import_the_release_worktree_source():
-    assert "release-auto-deadline" in str(PACKAGES), PACKAGES
+def test_tests_import_this_checkouts_source():
+    # The package under test must be the one beside these tests, not another checkout or an installed copy.
+    assert PACKAGES == (Path(__file__).resolve().parents[2] / "packages"), PACKAGES
