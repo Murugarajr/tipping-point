@@ -201,7 +201,9 @@ def search_material_offers(
             payload.query,
             limit=payload.limit,
             in_stock_only=payload.in_stock_only,
-            max_attempts=2,
+            # One user search sends exactly one provider request: live requests are budgeted, so a timeout,
+            # connection error or rate limit is reported to the merchant rather than retried automatically.
+            max_attempts=1,
         )
     except Channel3UnconfiguredError:
         raise HTTPException(
