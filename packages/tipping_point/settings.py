@@ -54,6 +54,9 @@ class AppSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
+        # Settings validation errors name the failing setting but never echo its input value
+        # (a credential may have been pasted into the wrong setting; startup errors reach hosted logs).
+        hide_input_in_errors=True,
     )
 
     environment: Literal["local", "hosted"] = Field(

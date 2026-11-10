@@ -171,7 +171,13 @@ def test_unrelated_invalid_settings_still_fail_startup_even_with_invalid_analyst
         _local(RESCUE_ANALYST_MODEL=SECRET_LIKE, **extra)
     fields = {str(e["loc"][0]).lower() for e in combined.value.errors(include_input=False)}
     assert "rescue_analyst_model" in fields and fields - {"rescue_analyst_model"}, "original error (analyst + unrelated) re-raised unchanged"
-    assert SECRET_LIKE not in str(combined.value.errors(include_input=False))
+    # The full error text (what a startup traceback prints) names the failing settings but echoes no input value.
+    text = str(combined.value)
+    assert SECRET_LIKE not in text and SECRET_LIKE not in repr(combined.value)
+    for name in fields - {"rescue_analyst_model"}:
+        assert name in text.lower(), f"the failing non-Analyst setting {name} is identified for diagnosis"
+    for value in extra.values():
+        assert f"input_value='{value}'" not in text, "unrelated input values are hidden as well"
 
 
 @pytest.mark.parametrize("bad", ["https://evil.example/v1", "model with space", "a//b", "../x", "x?y=1", "m\nodel", "-leading"])

@@ -63,6 +63,17 @@ class TestDatabaseTargetGuard:
             )
 
 
+def _record_harness_env(monkeypatch) -> None:
+    """Record every harness-managed variable so undo restores it, or removes it if it was unset."""
+    for key in (*harness.TEST_ENV_OVERRIDES, "TIPPING_POINT_ISOLATION_SENTINEL"):
+        if key in os.environ:
+            monkeypatch.setenv(key, os.environ[key])
+        else:
+            # delenv alone records nothing for an absent key; setenv first records "was unset".
+            monkeypatch.setenv(key, "")
+            monkeypatch.delenv(key)
+
+
 class TestHarnessEnvironment:
     @pytest.fixture(autouse=True)
     def _isolate_harness(self, monkeypatch):
@@ -72,11 +83,7 @@ class TestHarnessEnvironment:
         unset) and gives the tests a private copy of the harness snapshot, so the session's own snapshot used
         by pytest_unconfigure is never cleared or replaced.
         """
-        for key in (*harness.TEST_ENV_OVERRIDES, "TIPPING_POINT_ISOLATION_SENTINEL"):
-            if key in os.environ:
-                monkeypatch.setenv(key, os.environ[key])
-            else:
-                monkeypatch.delenv(key, raising=False)
+        _record_harness_env(monkeypatch)
         monkeypatch.setattr(harness, "_saved_overrides", dict(harness._saved_overrides))
 
     def test_unrelated_environment_is_not_overwritten(self, monkeypatch):
@@ -95,6 +102,16 @@ class TestHarnessEnvironment:
         assert os.environ["TIPPING_POINT_NAME"] == harness.TEST_DATABASE
         harness.restore_database_env()
         assert "TIPPING_POINT_NAME" not in os.environ
+
+    def test_previously_unset_harness_variable_is_removed_after_restoration(self, monkeypatch):
+        # Outer monkeypatch puts the session value back after this test; inner one is the code under test.
+        monkeypatch.delenv("TIPPING_POINT_NAME")
+        inner = pytest.MonkeyPatch()
+        _record_harness_env(inner)
+        harness.apply_test_database_env()  # writes os.environ directly, as an interrupted test could leave it
+        assert os.environ["TIPPING_POINT_NAME"] == harness.TEST_DATABASE
+        inner.undo()
+        assert "TIPPING_POINT_NAME" not in os.environ, "a previously unset variable is removed, not left set"
 
     def test_harness_tests_leave_the_session_test_database_in_place(self):
         # Runs after the two tests above (definition order): the session override and snapshot are intact.
