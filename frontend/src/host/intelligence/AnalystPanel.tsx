@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import * as api from "../../api";
 import {
-  MAX_MESSAGE_CHARS, SUGGESTED_QUESTIONS, analystErrorText, answerParagraphs, boundedHistory, connectionLabel, statusText,
+  ANALYST_DISCLAIMER, MAX_MESSAGE_CHARS, SUGGESTED_QUESTIONS, analystErrorText, answerParagraphs, boundedHistory, connectionLabel, statusText,
 } from "./analystModel";
 import type { AnalystActivity, AnalystStatus, AnalystVisualization, ChatMessage } from "./analystModel";
 
@@ -71,7 +71,7 @@ export default function AnalystPanel({ workshopId, onUnauthorized, applyVisualiz
       <h2 id="ci-analyst-heading">Rescue Analyst</h2>
       <span className="host-badge ci-analyst-connection">{status ? connectionLabel(status) : statusError ? "Status unavailable" : "Checking…"}</span>
     </div>
-    <p className="host-helper">Read-only. Answers use your saved terms and the backend calculator. Estimates and attendance scenarios are not bookings or collected money. It cannot publish, edit terms or take payments.</p>
+    <p className="host-helper">Read-only. Answers use your saved terms and the backend calculator. Estimates and attendance scenarios are not bookings or collected money. It cannot publish, edit terms or take payments. <strong className="ci-analyst-disclaimer">{ANALYST_DISCLAIMER}</strong></p>
     {statusError && <p className="host-notice host-warning" role="status">The analyst status could not be checked. The dashboard above is unaffected.</p>}
     {status && !status.available && <p className="host-notice ci-analyst-off" role="status"><strong>Analyst not configured.</strong> {statusText(status)} The dashboard above is unaffected.</p>}
     {status?.available && <>

@@ -33,10 +33,13 @@ export interface ChatMessage { role: "user" | "assistant"; content: string }
 
 export const SUGGESTED_QUESTIONS = [
   "Explain this workshop's tipping point.",
-  "Why can attendance five be non-viable when four is viable?",
+  "What could make this workshop non-viable?",
   "Show revenue versus total costs.",
   "Which materials drive the budget?",
 ] as const;
+
+/** Shown in the panel in every state. */
+export const ANALYST_DISCLAIMER = "Analyst output is informational and is not financial advice.";
 
 export const MAX_MESSAGE_CHARS = 2000;
 const MAX_MESSAGES = 12;

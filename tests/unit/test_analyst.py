@@ -535,6 +535,12 @@ def test_booking_window_is_reported_separately_from_viability():
     assert "Total costs include estimated payment fees" in SYSTEM_PROMPT
 
 
+def test_system_prompt_suggests_questions_not_workbench_actions():
+    assert "If asked, say so and suggest questions to investigate." in SYSTEM_PROMPT
+    assert "suggest what the merchant can do in the workbench" not in SYSTEM_PROMPT
+    assert "You cannot publish, edit terms, change prices, take payments, refund, contact suppliers, run code or fetch URLs." in SYSTEM_PROMPT
+
+
 # ---- cost-jump grounding (deterministic observations from the backend curve) -----------------------
 
 def _ctx(materials, *, ticket=1000, fixed=1000, bps=310) -> AnalystContext:
