@@ -64,30 +64,42 @@ class TestDatabaseTargetGuard:
 
 
 class TestHarnessEnvironment:
-    def test_unrelated_environment_is_not_overwritten(self):
-        os.environ["TIPPING_POINT_ISOLATION_SENTINEL"] = "untouched"
-        os.environ["TIPPING_POINT_NAME"] = "tipping_point_dev"
-        try:
-            harness.apply_test_database_env()
-            assert os.environ["TIPPING_POINT_ISOLATION_SENTINEL"] == "untouched"
-            assert os.environ["TIPPING_POINT_NAME"] == harness.TEST_DATABASE
-            harness.restore_database_env()
-            assert os.environ["TIPPING_POINT_NAME"] == "tipping_point_dev"
-            assert os.environ["TIPPING_POINT_ISOLATION_SENTINEL"] == "untouched"
-        finally:
-            os.environ.pop("TIPPING_POINT_ISOLATION_SENTINEL", None)
-            harness.restore_database_env()
+    @pytest.fixture(autouse=True)
+    def _isolate_harness(self, monkeypatch):
+        """These tests exercise the harness itself; nothing they change may outlive them.
 
-    def test_restore_removes_variables_that_did_not_exist(self):
-        saved = os.environ.pop("TIPPING_POINT_NAME", None)
-        try:
-            harness.apply_test_database_env()
-            assert os.environ["TIPPING_POINT_NAME"] == harness.TEST_DATABASE
-            harness.restore_database_env()
-            assert "TIPPING_POINT_NAME" not in os.environ
-        finally:
-            if saved is not None:
-                os.environ["TIPPING_POINT_NAME"] = saved
+        monkeypatch records every harness-managed variable (restored to its prior value, or removed if it was
+        unset) and gives the tests a private copy of the harness snapshot, so the session's own snapshot used
+        by pytest_unconfigure is never cleared or replaced.
+        """
+        for key in (*harness.TEST_ENV_OVERRIDES, "TIPPING_POINT_ISOLATION_SENTINEL"):
+            if key in os.environ:
+                monkeypatch.setenv(key, os.environ[key])
+            else:
+                monkeypatch.delenv(key, raising=False)
+        monkeypatch.setattr(harness, "_saved_overrides", dict(harness._saved_overrides))
+
+    def test_unrelated_environment_is_not_overwritten(self, monkeypatch):
+        monkeypatch.setenv("TIPPING_POINT_ISOLATION_SENTINEL", "untouched")
+        monkeypatch.setenv("TIPPING_POINT_NAME", "tipping_point_dev")
+        harness.apply_test_database_env()
+        assert os.environ["TIPPING_POINT_ISOLATION_SENTINEL"] == "untouched"
+        assert os.environ["TIPPING_POINT_NAME"] == harness.TEST_DATABASE
+        harness.restore_database_env()
+        assert os.environ["TIPPING_POINT_NAME"] == "tipping_point_dev"
+        assert os.environ["TIPPING_POINT_ISOLATION_SENTINEL"] == "untouched"
+
+    def test_restore_removes_variables_that_did_not_exist(self, monkeypatch):
+        monkeypatch.delenv("TIPPING_POINT_NAME", raising=False)
+        harness.apply_test_database_env()
+        assert os.environ["TIPPING_POINT_NAME"] == harness.TEST_DATABASE
+        harness.restore_database_env()
+        assert "TIPPING_POINT_NAME" not in os.environ
+
+    def test_harness_tests_leave_the_session_test_database_in_place(self):
+        # Runs after the two tests above (definition order): the session override and snapshot are intact.
+        assert os.environ["TIPPING_POINT_NAME"] == harness.TEST_DATABASE
+        assert harness._saved_overrides, "session snapshot used by pytest_unconfigure is still present"
 
 
 def test_orm_declares_no_cascading_relationships():
