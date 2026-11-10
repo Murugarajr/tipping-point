@@ -149,7 +149,14 @@ export function buildReadiness(detail: WorkshopDetail, now: Date = new Date()): 
   return { workshop, rows, range };
 }
 
-/** Timeline window with padding; hour resolution for short campaigns (booking windows are at most 48 hours). */
+/** Pixels kept to the left of the earliest saved date when the timeline first opens. */
+export const VISIBLE_DATE_EDGE_OFFSET = 40;
+
+/**
+ * Timeline window with padding; hour resolution for short campaigns (booking windows are at most 48 hours).
+ * Bryntum rounds the axis start down to its main unit (a week for weekAndDay), so a multi-day campaign could
+ * open on empty days before any saved date. `visibleDate` scrolls the first view to the earliest saved date.
+ */
 export function timelineWindow(range: Readiness["range"], now: Date = new Date()) {
   const start = range ? Date.parse(range.start) : now.getTime();
   const end = range ? Date.parse(range.end) : now.getTime();
@@ -159,6 +166,7 @@ export function timelineWindow(range: Readiness["range"], now: Date = new Date()
     startDate: new Date(start - pad),
     endDate: new Date(end + pad),
     viewPreset: span + 2 * pad <= 2.5 * 86400_000 ? "hourAndDay" : "weekAndDay",
+    visibleDate: { date: new Date(start), block: "start" as const, edgeOffset: VISIBLE_DATE_EDGE_OFFSET, animate: false },
   };
 }
 

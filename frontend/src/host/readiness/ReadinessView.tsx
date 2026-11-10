@@ -1,10 +1,10 @@
 import "./bryntumLicense"; // must run before the Bryntum modules load
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BryntumGantt } from "@bryntum/gantt-react-business";
-import "@bryntum/core-business/fontawesome/css/fontawesome.css";
-import "@bryntum/core-business/fontawesome/css/solid.css";
-import "@bryntum/gantt-business/gantt.css";
-import "@bryntum/gantt-business/svalbard.css";
+import { BryntumGantt } from "@bryntum/gantt-react-enterprise";
+import "@bryntum/core-enterprise/fontawesome/css/fontawesome.css";
+import "@bryntum/core-enterprise/fontawesome/css/solid.css";
+import "@bryntum/gantt-enterprise/gantt.css";
+import "@bryntum/gantt-enterprise/svalbard.css";
 import "./readiness.css";
 import * as api from "../../api";
 import { navigate } from "../../navigation";
@@ -105,6 +105,7 @@ export default function ReadinessView({ id, onUnauthorized }: { id: string; onUn
           startDate={timeline.startDate}
           endDate={timeline.endDate}
           viewPreset={timeline.viewPreset}
+          visibleDate={timeline.visibleDate}
           rowHeight={36}
           barMargin={9}
           subGridConfigs={{ locked: { width: 600 } }}
@@ -112,6 +113,8 @@ export default function ReadinessView({ id, onUnauthorized }: { id: string; onUn
           taskDragFeature={false}
           taskResizeFeature={false}
           taskDragCreateFeature={false}
+          taskSegmentDragFeature={false}
+          taskSegmentResizeFeature={false}
           taskEditFeature={false}
           taskMenuFeature={false}
           taskCopyPasteFeature={false}

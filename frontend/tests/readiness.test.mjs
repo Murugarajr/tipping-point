@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NO_SAVED_DATE, READINESS_TIME_ZONE, buildReadiness, ganttProject, ganttTasks, readinessPath, shortDateText, timelineWindow } from "../src/host/readiness/readinessModel.ts";
+import { NO_SAVED_DATE, READINESS_TIME_ZONE, VISIBLE_DATE_EDGE_OFFSET, buildReadiness, ganttProject, ganttTasks, readinessPath, shortDateText, timelineWindow } from "../src/host/readiness/readinessModel.ts";
 import { readinessRoute, safeHostReturn } from "../src/host/model.ts";
 
 const ID = "22222222-2222-4222-8222-222222222222";
@@ -102,6 +102,18 @@ test("Gantt tasks: read-only, manually scheduled, no dependencies, unscheduled w
   for (const id of ["materials", "preparation", "delivery"]) assert.equal(byId[id].unscheduled, true, id);
   assert.deepEqual([parent.startDate, parent.endDate], ["2026-11-14T08:00:00.000Z", "2026-11-17T09:30:00.000Z"]);
   assert.match(byId["booking-cutoff"].cls, /tp-tone-settled tp-kind-saved/);
+});
+
+test("multi-day campaign opens on its earliest saved date, not the start of the padded week", () => {
+  // Published 8 Nov, booking 15–17 Nov: a 9-day span uses weekAndDay, whose axis Bryntum rounds back to Sunday 1 Nov.
+  const range = { start: "2026-11-08T08:00:00Z", end: "2026-11-17T09:00:00Z" };
+  const w = timelineWindow(range);
+  assert.equal(w.viewPreset, "weekAndDay");
+  assert.ok(w.startDate < new Date(range.start) && w.endDate > new Date(range.end));
+  assert.deepEqual(w.visibleDate, { date: new Date(range.start), block: "start", edgeOffset: VISIBLE_DATE_EDGE_OFFSET, animate: false });
+  const short = timelineWindow({ start: OPENS, end: "2026-11-16T10:00:00Z" });
+  assert.equal(short.visibleDate.date.toISOString(), new Date(OPENS).toISOString(), "short campaigns also open on their first saved date");
+  assert.equal(range.start, "2026-11-08T08:00:00Z", "saved instant not modified");
 });
 
 test("timeline window pads the saved span and picks hour resolution for short campaigns", () => {

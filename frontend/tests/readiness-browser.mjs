@@ -33,6 +33,7 @@ const RELEASED = "22222222-2222-4222-8222-222222222222";
 const DRAFT = "33333333-3333-4333-8333-333333333333";
 const FOREIGN = "44444444-4444-4444-8444-444444444444";
 const SUMMER = "55555555-5555-4555-8555-555555555555";
+const MULTIDAY = "66666666-6666-4666-8666-666666666666";
 const settlement = (extra = {}) => ({ state: "OPEN", decision_result: null, decision_reason: null, frozen_attendance: null, admitted_attendance: 0,
   authorized_minor: 0, collected_minor: 0, refunded_minor: 0, capture_pending: 0, release_pending: 0, refund_pending: 0, review_required: false,
   settlement_deadline: null, decided_at: null, fee_basis: "estimated", actual_fees_minor: null, estimated_fees_minor: null,
@@ -55,6 +56,9 @@ const details = {
   [SUMMER]: workshop(SUMMER, "Summer near-midnight", "2026-07-01T23:30:00Z", "2026-07-02T23:15:00Z",
     campaign(SUMMER, "CANCELLED", "2026-07-02T23:15:00Z", "2026-07-01T22:30:00Z", settlement({ state: "CANCELLED", decision_result: "RELEASE",
       decision_reason: "ACTUAL_ATTENDANCE_NOT_VIABLE", frozen_attendance: 1, settlement_deadline: "2026-07-03T00:15:00Z", decided_at: "2026-07-02T23:20:00Z" }))),
+  // Multi-day span (published 8 Nov, booking 15-17 Nov): weekAndDay axis that Bryntum rounds back to Sunday 1 Nov.
+  [MULTIDAY]: workshop(MULTIDAY, "Multi-day span", "2026-11-15T10:00:00Z", "2026-11-17T09:00:00Z",
+    campaign(MULTIDAY, "OPEN", "2026-11-17T09:00:00Z", "2026-11-08T08:00:00Z", settlement())),
 };
 
 let chrome, socket, checks = 0;
@@ -151,7 +155,7 @@ try {
   // ---- 2. Real Bryntum Gantt instance, read-only, no dependencies ------------------------------------
   const info = await gantt(`return { isGantt: !!g.isGantt, readOnly: g.readOnly, tasks: g.taskStore.count, deps: g.dependencyStore?.count ?? 0,
     locked: Math.round(g.subGrids.locked.element.getBoundingClientRect().width), rowHeight: g.rowHeight,
-    features: ['taskDrag','taskResize','taskDragCreate','taskEdit','taskMenu','cellEdit','cellMenu','headerMenu','dependencies','dependencyEdit','rowReorder','columnReorder','columnResize','sort','filter','taskCopyPaste','cellCopyPaste','rowCopyPaste','percentBar']
+    features: ['taskDrag','taskResize','taskDragCreate','taskSegmentDrag','taskSegmentResize','taskEdit','taskMenu','cellEdit','cellMenu','headerMenu','dependencies','dependencyEdit','rowReorder','columnReorder','columnResize','sort','filter','taskCopyPaste','cellCopyPaste','rowCopyPaste','percentBar']
       .filter(f => g.features[f] && !g.features[f].disabled) }`);
   assert.ok(info.isGantt, "bryntum.query('gantt') returns a Gantt instance");
   assert.equal(await evaluate("!!document.querySelector('.tp-readiness .b-gantt')"), true, "Bryntum Gantt element rendered");
@@ -259,6 +263,83 @@ try {
   assert.match(await evaluate("document.querySelector('.tp-readiness-page [role=alert]').innerText"), /not found in your workspace/);
   assert.equal(await evaluate("!!document.querySelector('.tp-readiness .b-gantt')"), false);
   passed("cross-merchant (404) workshop shows not-found; no Gantt rendered");
+
+  // ---- 9a. Multi-day campaign: opens on its earliest saved date; later dates are reached by scrolling --
+  await viewport(1440);
+  await visit(pathOf(MULTIDAY)); await ganttReady();
+  await sleep(300);
+  const m = details[MULTIDAY];
+  // London calendar day ("15 Nov") and fraction of that day, for comparing rendered positions with saved instants.
+  const londonParts = (iso) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "2-digit", month: "short", hour: "2-digit",
+      minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+    return { day: `${p.day} ${p.month}`, frac: (Number(p.hour) * 60 + Number(p.minute)) / 1440 };
+  };
+  // Actual rendered geometry: visible timeline area, the task's bar/milestone box, and the day header cells on screen.
+  const measure = (taskId) => evaluate(`(() => {
+    const g = bryntum.query('gantt');
+    const a = g.subGrids.normal.element.getBoundingClientRect();
+    const r = document.querySelector('.tp-readiness .b-gantt-task-wrap[data-task-id="${taskId}"]')?.getBoundingClientRect();
+    const days = [...document.querySelectorAll('.tp-readiness .b-sch-header-time-axis-cell')]
+      .map((c) => ({ t: c.textContent.trim(), b: c.getBoundingClientRect() })).filter((c) => /^\\d{2} [A-Z][a-z]{2}$/.test(c.t))
+      .map((c) => ({ t: c.t, left: c.b.left, width: c.b.width }));
+    return { area: { left: a.left, right: a.right, top: a.top, bottom: a.bottom }, rect: r ? { left: r.left, right: r.right, width: r.width } : null,
+      days, scrollX: g.timeAxisSubGrid.scrollable.x };
+  })()`);
+  const intersects = (v) => !!v.rect && v.rect.right > v.area.left && v.rect.left < v.area.right;
+  const startOnScreen = (v) => !!v.rect && v.rect.left >= v.area.left && v.rect.left < v.area.right;
+  const wholeOnScreen = (v) => !!v.rect && v.rect.left >= v.area.left && v.rect.right <= v.area.right;
+  // Rendered position vs saved date: the London day cell under the element and the time-of-day offset inside it.
+  const positionMatches = (v, iso, kind) => {
+    const { day, frac } = londonParts(iso);
+    const cell = v.days.find((c) => c.t === day);
+    assert.ok(cell, `day header ${day} rendered on screen; got ${v.days.map((c) => c.t).join(", ")}`);
+    const expected = cell.left + frac * cell.width;
+    if (kind === "bar") assert.ok(Math.abs(v.rect.left - expected) <= 3, `bar starts at ${v.rect.left.toFixed(1)}px, saved date maps to ${expected.toFixed(1)}px (${day})`);
+    else assert.ok(expected >= v.rect.left - 1 && expected <= v.rect.right + 1, `milestone ${v.rect.left.toFixed(1)}-${v.rect.right.toFixed(1)}px covers its saved date at ${expected.toFixed(1)}px (${day})`);
+    return Math.round(kind === "bar" ? v.rect.left - expected : (v.rect.left + v.rect.right) / 2 - expected);
+  };
+  const snapshot = () => gantt("return g.taskStore.allRecords.map(t => [t.id, t.startDate?.toISOString() ?? null, t.endDate?.toISOString() ?? null]).sort().join('|') + '#' + g.taskStore.modified.count");
+  const info9a = await gantt(`return { preset: g.viewPreset?.id ?? null, axisStart: g.startDate.toISOString(),
+    instants: ['publication', 'booking-window', 'booking-cutoff'].map(id => g.taskStore.getById(id).startDate.toISOString()),
+    enabledFeatures: Object.keys(g.features).filter((f) => g.features[f] && !g.features[f].disabled).sort() }`);
+  assert.deepEqual(info9a.instants, [m.campaign.published_at, m.opens_at, m.closes_at].map((iso) => new Date(iso).toISOString()), "saved instants unchanged");
+  assert.equal(info9a.preset, "weekAndDay");
+  assert.ok(new Date(info9a.axisStart) < new Date("2026-11-07T00:00:00Z"), `axis still starts on the rounded week (${info9a.axisStart})`);
+  assert.ok(new Date(m.opens_at) > new Date(m.campaign.published_at), "booking window starts chronologically after publication");
+  const before9a = await snapshot();
+  const callsBefore9a = mutating().length;
+
+  // Initial load: publication (earliest saved event) intersects the visible timeline area at its saved position.
+  const pub = await measure("publication");
+  assert.ok(pub.scrollX > 0, "timeline opened scrolled to the saved dates, not at the axis start");
+  assert.ok(intersects(pub), `publication intersects the visible timeline on load: ${JSON.stringify({ area: pub.area, rect: pub.rect })}`);
+  const pubDelta = positionMatches(pub, m.campaign.published_at, "milestone");
+  const win0 = await measure("booking-window");
+  assert.ok(!startOnScreen(win0), "booking-window start is initially beyond the visible area at 1440px (reached by scrolling)");
+
+  // Real horizontal wheel scrolling over the timeline body until each later saved date is on screen.
+  const wheelUntil = async (taskId, onScreen) => {
+    for (let step = 0; step <= 60; step++) {
+      const v = await measure(taskId);
+      if (onScreen(v)) return { v, step };
+      await cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: Math.round((v.area.left + v.area.right) / 2), y: Math.round((v.area.top + v.area.bottom) / 2), deltaX: 120, deltaY: 0 });
+      await sleep(120);
+    }
+    throw new Error(`${taskId} not revealed by horizontal scrolling`);
+  };
+  const win = await wheelUntil("booking-window", startOnScreen);
+  const winDelta = positionMatches(win.v, m.opens_at, "bar");
+  const cut = await wheelUntil("booking-cutoff", wholeOnScreen);
+  const cutDelta = positionMatches(cut.v, m.closes_at, "milestone");
+  assert.ok(cut.v.scrollX > pub.scrollX, "the timeline itself scrolled horizontally");
+  assert.equal(await snapshot(), before9a, "scrolling changed no task data");
+  assert.equal(mutating().length, callsBefore9a, "scrolling sent no mutating request");
+  console.log(`Enterprise Gantt enabled features: ${info9a.enabledFeatures.join(", ")}`);
+  console.log(`9a measurements: area ${Math.round(pub.area.left)}-${Math.round(pub.area.right)}px; initial scrollX ${Math.round(pub.scrollX)}; publication at ${Math.round(pub.rect.left - pub.area.left)}px (delta ${pubDelta}); `
+    + `booking-window start initially at ${win0.rect ? Math.round(win0.rect.left - win0.area.left) + "px" : "not rendered"}, revealed after ${win.step} wheel steps at ${Math.round(win.v.rect.left - win.v.area.left)}px (delta ${winDelta}); `
+    + `cutoff revealed after ${cut.step} more steps at ${Math.round(cut.v.rect.left - cut.v.area.left)}px (delta ${cutDelta}); scrollX ${Math.round(cut.v.scrollX)}`);
+  passed(`multi-day (8-17 Nov): opens with publication on screen at its saved position; horizontal scrolling reveals booking-window start (${win.step} steps) and cutoff at their saved dates; no data change or mutating request`);
 
   // ---- 9. One zone everywhere: list, summary and timeline in Europe/London whatever the browser zone ---
   // The browser zone is emulated through CDP and read back from the page; TZ in the environment is not relied on.
