@@ -28,6 +28,25 @@ This repository contains the scaffold for the Tipping Point sandbox workshop boo
    .venv/bin/python -m pytest
    ```
 
+### Running the backend suite in a clean checkout or worktree
+
+No private `.env` is needed. The pytest bootstrap (`tests/conftest.py`) forces the isolated
+`tipping_point_test` database and reads application settings only from the committed, non-secret
+`tests/local-test.env`, which sets exactly `TIPPING_POINT_ENV=local` and
+`TIPPING_POINT_ALLOW_INSECURE_DEV_COOKIES=true` (plain-HTTP test clients). It writes nothing to the process
+environment, so settings built with `_env_file=None` keep their secure defaults. Do not export
+`TIPPING_POINT_*` variables for test runs.
+
+Run from the checkout root, using the repository-root virtual environment. In a git worktree the root
+`.venv` has an editable install pointing at the primary checkout, so put this checkout's `packages/` first:
+
+```bash
+PYTHONPATH="$PWD/packages" /path/to/repo/.venv/bin/python -m pytest -q -rs
+```
+
+`tests/integration/test_guest_browser_api.py` additionally needs a built frontend (`npm --prefix frontend ci`
+and `npm --prefix frontend run build`) and installed Chrome; otherwise it is skipped.
+
 ## Package Structure
 
 - `packages/tipping_point/` – importable FastAPI application package

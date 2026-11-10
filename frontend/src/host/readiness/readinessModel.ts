@@ -33,6 +33,11 @@ export interface Readiness {
 }
 
 export const NO_SAVED_DATE = "No saved date";
+/**
+ * The one zone every readiness date is presented in: list, text summary, timeline headers and task dates.
+ * Saved values stay UTC instants; only presentation uses this IANA zone (GMT and BST handled by the zone rules).
+ */
+export const READINESS_TIME_ZONE = "Europe/London";
 
 const time = (value: string | null | undefined) => {
   if (!value) return null;
@@ -171,6 +176,14 @@ export interface GanttTaskData {
   children?: GanttTaskData[];
 }
 
+/**
+ * Bryntum project config: task data plus the IANA zone. Bryntum 8's default (Temporal-based) zone mode displays
+ * and computes in that zone without mutating records, so task dates remain the saved UTC instants.
+ */
+export function ganttProject(readiness: Readiness) {
+  return { timeZone: READINESS_TIME_ZONE, tasks: ganttTasks(readiness) };
+}
+
 /** Read-only Bryntum task data. No dependencies: the backend stores none between these steps. */
 export function ganttTasks(readiness: Readiness): GanttTaskData[] {
   const toTask = (row: ReadinessRow): GanttTaskData => {
@@ -186,9 +199,9 @@ export function ganttTasks(readiness: Readiness): GanttTaskData[] {
   return [range ? { ...parentBase, startDate: range.start, endDate: range.end } : { ...parentBase, unscheduled: true as const }];
 }
 
-const SHORT = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-const DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "numeric", day: "numeric" });
-const TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" });
+const SHORT = new Intl.DateTimeFormat("en-GB", { timeZone: READINESS_TIME_ZONE, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const DAY = new Intl.DateTimeFormat("en-GB", { timeZone: READINESS_TIME_ZONE, year: "numeric", month: "numeric", day: "numeric" });
+const TIME = new Intl.DateTimeFormat("en-GB", { timeZone: READINESS_TIME_ZONE, hour: "2-digit", minute: "2-digit" });
 /** Compact Europe/London label for the grid ("7 Nov, 09:30"); full timestamps are in the text summary. */
 export function shortDateText(row: Pick<ReadinessRow, "start" | "end">): string | null {
   if (!row.start) return null;

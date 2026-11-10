@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
@@ -23,22 +23,62 @@ async function until(check, label) {
   }
   throw new Error(`Timed out: ${label}`);
 }
+const startedAt = Date.now();
+// Own process group (detached), so cleanup can signal Chrome and its helpers without touching any other Chrome.
 const chrome = spawn(process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
   "--headless", "--disable-gpu", "--disable-background-networking", "--disable-sync",
   "--disable-component-update", "--no-first-run", "--no-default-browser-check",
   "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
-], { stdio: ["ignore", "ignore", "pipe"] });
+], { stdio: ["ignore", "ignore", "pipe"], detached: true });
+let chromeStderr = "", chromeExit = null;
+chrome.stderr.on("data", (data) => { chromeStderr = (chromeStderr + data).slice(-8000); });
+chrome.on("exit", (code, signal) => { chromeExit = { code, signal, afterMs: Date.now() - startedAt }; });
+const chromeAlive = () => chrome.exitCode === null && chrome.signalCode === null;
+
+/** Startup diagnostics: process state, profile initialisation and Chrome's own stderr tail (no app data). */
+async function chromeDiagnostics() {
+  const entries = await readdir(profile).catch(() => []);
+  return JSON.stringify({ elapsedMs: Date.now() - startedAt, chromePid: chrome.pid ?? null, alive: chromeAlive(), exit: chromeExit,
+    profileEntries: entries.slice(0, 20), devToolsActivePort: entries.includes("DevToolsActivePort"), stderrTail: chromeStderr.slice(-1500) });
+}
+
+/** Processes started for this run's unique profile only (Chrome helpers name it on their command line). */
+function ownProfilePids() {
+  try {
+    return execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n")
+      .filter((line) => line.includes(profile)).map((line) => Number.parseInt(line.trim(), 10))
+      .filter((pid) => Number.isInteger(pid) && pid !== process.pid);
+  } catch { return []; }
+}
+
+let stopped = false;
+/** Idempotent cleanup of this run's Chrome, its helpers and its temporary profile. */
+async function stopChrome() {
+  if (stopped) return;
+  stopped = true;
+  const signalGroup = (signal) => { try { process.kill(-chrome.pid, signal); } catch {} };
+  if (chrome.pid) {
+    signalGroup("SIGTERM");
+    for (let i = 0; i < 50 && chromeAlive(); i++) await sleep(100);
+    if (chromeAlive()) signalGroup("SIGKILL");
+    for (const pid of ownProfilePids()) { try { process.kill(pid, "SIGKILL"); } catch {} }
+  }
+  await rm(profile, { recursive: true, force: true }).catch(() => {});
+}
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.once(signal, () => { void stopChrome().finally(() => process.exit(signal === "SIGTERM" ? 143 : 130)); });
+}
+
 let socket;
 try {
   const endpoint = await new Promise((done, reject) => {
-    let output = "";
-    const timeout = setTimeout(() => reject(new Error("Chrome endpoint unavailable")), 15000);
-    chrome.stderr.on("data", (data) => {
-      output += data;
-      const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+    const timeout = setTimeout(async () => reject(new Error(`Chrome endpoint unavailable after 15000 ms: ${await chromeDiagnostics()}`)), 15000);
+    chrome.stderr.on("data", () => {
+      const match = chromeStderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);
       if (match) { clearTimeout(timeout); done(match[1]); }
     });
-    chrome.on("error", reject);
+    chrome.once("exit", async () => { clearTimeout(timeout); reject(new Error(`Chrome exited before its DevTools endpoint: ${await chromeDiagnostics()}`)); });
+    chrome.on("error", (error) => { clearTimeout(timeout); reject(error); });
   });
   socket = new WebSocket(endpoint);
   await new Promise((done, reject) => {
@@ -137,5 +177,5 @@ try {
   control.close();
   process.stdin.destroy();
   socket?.close();
-  chrome.kill("SIGTERM");
+  await stopChrome();
 }

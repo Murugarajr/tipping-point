@@ -8,8 +8,11 @@ configuration is never touched.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 TEST_ENV_PREFIX = "TIPPING_POINT_"
+# Committed, non-secret local-test application settings (see the file for its contents).
+LOCAL_TEST_ENV_FILE = Path(__file__).resolve().with_name("local-test.env")
 TEST_DATABASE = "tipping_point_test"
 TEST_USER = "tipping_point_app"
 
@@ -43,3 +46,33 @@ def restore_database_env() -> None:
         else:
             os.environ[key] = original
     _saved_overrides.clear()
+
+
+_saved_settings_env_files: dict[type, object] = {}
+
+
+def _settings_classes() -> tuple[type, ...]:
+    from tipping_point.db.config import DatabaseConfig
+    from tipping_point.settings import AppSettings
+
+    return (AppSettings, DatabaseConfig)
+
+
+def use_local_test_settings_file() -> None:
+    """Point the default env-file source of AppSettings and DatabaseConfig at the committed local-test file.
+
+    This replaces the checkout's private ``.env`` for the test session only. Nothing is
+    written to ``os.environ``, so settings built with ``_env_file=None`` (isolation tests)
+    still see the secure defaults, and explicit hosted settings are validated unchanged.
+    The test-database target is still forced by ``apply_test_database_env``.
+    """
+    for cls in _settings_classes():
+        _saved_settings_env_files.setdefault(cls, cls.model_config.get("env_file"))
+        cls.model_config["env_file"] = str(LOCAL_TEST_ENV_FILE)
+
+
+def restore_settings_env_file() -> None:
+    """Restore the original env-file configuration of every patched settings class."""
+    for cls, original in _saved_settings_env_files.items():
+        cls.model_config["env_file"] = original
+    _saved_settings_env_files.clear()

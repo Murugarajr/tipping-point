@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { NO_SAVED_DATE, buildReadiness, ganttTasks, readinessPath, shortDateText, timelineWindow } from "../src/host/readiness/readinessModel.ts";
+import { NO_SAVED_DATE, READINESS_TIME_ZONE, buildReadiness, ganttProject, ganttTasks, readinessPath, shortDateText, timelineWindow } from "../src/host/readiness/readinessModel.ts";
 import { readinessRoute, safeHostReturn } from "../src/host/model.ts";
 
 const ID = "22222222-2222-4222-8222-222222222222";
@@ -117,6 +117,28 @@ test("grid dates are compact Europe/London labels; undated rows have none", () =
   assert.equal(shortDateText({ start: "2026-11-09T12:00:00Z", end: "2026-11-09T12:20:00Z" }), "9 Nov, 12:00 → 12:20", "same London day: time only");
   assert.equal(shortDateText({ start: null, end: null }), null);
   assert.equal(NO_SAVED_DATE, "No saved date");
+});
+
+test("near-midnight BST instants show the London calendar date; the GMT case is unchanged", () => {
+  // Summer (BST, UTC+1): 23:30Z on 1 July is 00:30 on 2 July in London.
+  assert.equal(shortDateText({ start: "2026-07-01T23:30:00Z", end: "2026-07-02T23:15:00Z" }), "2 Jul, 00:30 → 3 Jul, 00:15");
+  assert.equal(shortDateText({ start: "2026-07-02T23:20:00Z", end: null }), "3 Jul, 00:20");
+  // Winter (GMT): London equals UTC, so the same wall-clock values keep their UTC dates.
+  assert.equal(shortDateText({ start: "2026-11-07T23:30:00Z", end: "2026-11-08T23:45:00Z" }), "7 Nov, 23:30 → 8 Nov, 23:45");
+});
+
+test("Gantt project presents in Europe/London and keeps the saved UTC instants unchanged", () => {
+  assert.equal(READINESS_TIME_ZONE, "Europe/London");
+  const OPENS_BST = "2026-07-01T23:30:00Z", CUTOFF_BST = "2026-07-02T23:15:00Z";
+  const r = buildReadiness(detail(campaign({ cutoff_at: CUTOFF_BST, published_at: "2026-07-01T22:30:00Z" }), { opens_at: OPENS_BST, closes_at: CUTOFF_BST }),
+    new Date("2026-07-02T12:00:00Z"));
+  const project = ganttProject(r);
+  assert.equal(project.timeZone, "Europe/London", "IANA zone, not a numeric or fixed offset");
+  const byId = Object.fromEntries(project.tasks[0].children.map((t) => [t.id, t]));
+  assert.deepEqual([byId["booking-window"].startDate, byId["booking-window"].endDate], [OPENS_BST, CUTOFF_BST], "no hours added or removed");
+  assert.equal(byId["booking-cutoff"].startDate, CUTOFF_BST);
+  assert.equal(byId.publication.startDate, "2026-07-01T22:30:00Z");
+  assert.deepEqual(project.tasks, ganttTasks(r), "task data identical to the zone-free projection");
 });
 
 test("readiness route is owned-workshop scoped and an allowed post-login return", () => {

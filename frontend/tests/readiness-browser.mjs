@@ -32,6 +32,7 @@ const EXPIRED = "11111111-1111-4111-8111-111111111111";
 const RELEASED = "22222222-2222-4222-8222-222222222222";
 const DRAFT = "33333333-3333-4333-8333-333333333333";
 const FOREIGN = "44444444-4444-4444-8444-444444444444";
+const SUMMER = "55555555-5555-4555-8555-555555555555";
 const settlement = (extra = {}) => ({ state: "OPEN", decision_result: null, decision_reason: null, frozen_attendance: null, admitted_attendance: 0,
   authorized_minor: 0, collected_minor: 0, refunded_minor: 0, capture_pending: 0, release_pending: 0, refund_pending: 0, review_required: false,
   settlement_deadline: null, decided_at: null, fee_basis: "estimated", actual_fees_minor: null, estimated_fees_minor: null,
@@ -50,6 +51,10 @@ const details = {
     campaign(RELEASED, "CANCELLED", "2026-11-09T12:20:00Z", "2026-11-09T11:58:00Z", settlement({ state: "CANCELLED", decision_result: "RELEASE",
       decision_reason: "ACTUAL_ATTENDANCE_NOT_VIABLE", frozen_attendance: 1, settlement_deadline: "2026-11-09T12:50:00Z", decided_at: "2026-11-09T12:21:30Z" }))),
   [DRAFT]: workshop(DRAFT, "Draft binding", "2026-11-20T10:00:00Z", "2026-11-21T10:00:00Z", null),
+  // Summer (BST) near-midnight instants: London calendar dates differ from UTC calendar dates.
+  [SUMMER]: workshop(SUMMER, "Summer near-midnight", "2026-07-01T23:30:00Z", "2026-07-02T23:15:00Z",
+    campaign(SUMMER, "CANCELLED", "2026-07-02T23:15:00Z", "2026-07-01T22:30:00Z", settlement({ state: "CANCELLED", decision_result: "RELEASE",
+      decision_reason: "ACTUAL_ATTENDANCE_NOT_VIABLE", frozen_attendance: 1, settlement_deadline: "2026-07-03T00:15:00Z", decided_at: "2026-07-02T23:20:00Z" }))),
 };
 
 let chrome, socket, checks = 0;
@@ -255,7 +260,45 @@ try {
   assert.equal(await evaluate("!!document.querySelector('.tp-readiness .b-gantt')"), false);
   passed("cross-merchant (404) workshop shows not-found; no Gantt rendered");
 
-  // ---- 9. Narrow viewport; no external requests; no uncaught errors -----------------------------------
+  // ---- 9. One zone everywhere: list, summary and timeline in Europe/London whatever the browser zone ---
+  // The browser zone is emulated through CDP and read back from the page; TZ in the environment is not relied on.
+  const s = details[SUMMER];
+  const headerUnder = (taskId) => evaluate(`(async () => {
+    const g = bryntum.query('gantt'); const t = g.taskStore.getById('${taskId}');
+    await g.scrollTaskIntoView(t, { block: 'center', animate: false });
+    await new Promise((done) => setTimeout(done, 300));
+    const x = document.querySelector('.b-gantt-task-wrap[data-task-id="${taskId}"]').getBoundingClientRect().left + 1;
+    return [...document.querySelectorAll('.tp-readiness .b-sch-header-time-axis-cell')]
+      .filter((c) => { const r = c.getBoundingClientRect(); return x >= r.left && x < r.right; }).map((c) => c.textContent.trim());
+  })()`);
+  const zoneResults = {};
+  for (const zone of ["UTC", "Europe/London"]) {
+    await cdp("Emulation.setTimezoneOverride", { timezoneId: zone });
+    await visit(pathOf(SUMMER)); await ganttReady();
+    assert.equal(await evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone"), zone, "browser zone emulation took effect");
+    const instants = await gantt(`const t = id => g.taskStore.getById(id).startDate.toISOString(); return { opens: t('booking-window'),
+      closes: g.taskStore.getById('booking-window').endDate.toISOString(), cutoff: t('booking-cutoff'), published: t('publication'), decided: t('decision'), settled: t('settlement') }`);
+    assert.deepEqual(instants, { opens: new Date(s.opens_at).toISOString(), closes: new Date(s.closes_at).toISOString(), cutoff: new Date(s.campaign.cutoff_at).toISOString(),
+      published: new Date(s.campaign.published_at).toISOString(), decided: new Date(s.campaign.settlement.decided_at).toISOString(),
+      settled: new Date(s.campaign.settlement.settlement_deadline).toISOString() }, `${zone}: saved UTC instants unchanged`);
+    const grid = await evaluate("[...document.querySelectorAll('.tp-readiness .b-grid-sub-grid-locked .tp-date')].map(d => d.textContent)");
+    for (const label of ["2 Jul, 00:30 → 3 Jul, 00:15", "1 Jul, 23:30", "3 Jul, 00:15", "3 Jul, 00:20", "3 Jul, 01:15"]) assert.ok(grid.includes(label), `${zone}: grid shows ${label}; got ${grid.join(" | ")}`);
+    const headers = {};
+    for (const id of ["booking-window", "publication", "booking-cutoff", "decision", "settlement"]) headers[id] = await headerUnder(id);
+    // Timeline day/hour headers under each milestone match the grid's London calendar date and hour.
+    assert.ok(headers["booking-window"].includes("Thu 07/02"), `${zone}: booking window starts on 2 Jul (London); got ${headers["booking-window"]}`);
+    assert.deepEqual(headers.publication, ["Wed 07/01", "11 PM"], `${zone}: publication 1 Jul 23:30`);
+    assert.deepEqual(headers["booking-cutoff"], ["Fri 07/03", "12 AM"], `${zone}: cutoff 3 Jul 00:15`);
+    assert.deepEqual(headers.decision, ["Fri 07/03", "12 AM"], `${zone}: decision 3 Jul 00:20`);
+    assert.deepEqual(headers.settlement, ["Fri 07/03", "1 AM"], `${zone}: settlement 3 Jul 01:15`);
+    assert.match(await evaluate("document.querySelector('.tp-readiness-page .host-helper').innerText"), /Europe\/London/);
+    zoneResults[zone] = { grid, headers };
+  }
+  assert.deepEqual(zoneResults.UTC, zoneResults["Europe/London"], "identical grid labels and timeline headers in UTC and Europe/London browsers");
+  await cdp("Emulation.setTimezoneOverride", { timezoneId: "" });
+  passed("BST near-midnight: grid labels and timeline day/hour headers agree on London dates in both UTC and Europe/London browsers; saved instants unchanged");
+
+  // ---- 10. Narrow viewport; no external requests; no uncaught errors ----------------------------------
   await viewport(390, 900);
   await visit(pathOf(EXPIRED)); await ganttReady();
   assert.equal(await evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"), true, "no horizontal page scroll at 390px");

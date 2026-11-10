@@ -5,17 +5,24 @@ restores the original environment afterwards. Unrelated environment
 configuration is never modified.
 """
 
-from tests.harness import apply_test_database_env, restore_database_env
+from tests.harness import (
+    apply_test_database_env,
+    restore_database_env,
+    restore_settings_env_file,
+    use_local_test_settings_file,
+)
 import pytest
 
 
 def pytest_configure(config):
-    """Inject the isolated test database into the process environment."""
+    """Inject the isolated test database and the committed local-test settings file."""
     apply_test_database_env()
+    use_local_test_settings_file()
 
 
 def pytest_unconfigure(config):
-    """Restore the original environment exactly as it was found."""
+    """Restore the original environment and settings configuration exactly as found."""
+    restore_settings_env_file()
     restore_database_env()
 
 

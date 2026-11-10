@@ -10,7 +10,7 @@ import * as api from "../../api";
 import { navigate } from "../../navigation";
 import { displayDate } from "../model";
 import { intelligencePath } from "../intelligence/intelligenceModel";
-import { NO_SAVED_DATE, buildReadiness, ganttTasks, shortDateText, timelineWindow } from "./readinessModel";
+import { NO_SAVED_DATE, READINESS_TIME_ZONE, buildReadiness, ganttProject, shortDateText, timelineWindow } from "./readinessModel";
 import type { Readiness, ReadinessRow } from "./readinessModel";
 
 type LoadState =
@@ -53,7 +53,7 @@ export default function ReadinessView({ id, onUnauthorized }: { id: string; onUn
 
   const ready = state.kind === "ready" ? state.readiness : null;
   const rowById = useMemo(() => new Map(ready ? [ready.workshop, ...ready.rows].map((r) => [r.id, r]) : []), [ready]);
-  const project = useMemo(() => ready ? { tasks: ganttTasks(ready) } : undefined, [ready]);
+  const project = useMemo(() => ready ? ganttProject(ready) : undefined, [ready]);
   const timeline = useMemo(() => ready ? timelineWindow(ready.range) : null, [ready]);
 
   const columns = useMemo(() => [
@@ -100,6 +100,7 @@ export default function ReadinessView({ id, onUnauthorized }: { id: string; onUn
       <div className="tp-readiness host-panel" data-testid="readiness-gantt">
         <BryntumGantt
           project={project}
+          timeZone={READINESS_TIME_ZONE}
           columns={columns}
           startDate={timeline.startDate}
           endDate={timeline.endDate}
@@ -132,7 +133,7 @@ export default function ReadinessView({ id, onUnauthorized }: { id: string; onUn
           filterFeature={false}
         />
       </div>
-      <p className="host-helper">Times in the list are Europe/London; the timeline uses your browser's time zone. No dependency lines are drawn because the backend stores no dependencies between these steps. Loaded {displayDate(state.kind === "ready" ? state.loadedAt.toISOString() : null)}.</p>
+      <p className="host-helper">All times, in the list and on the timeline, are UK time (Europe/London). No dependency lines are drawn because the backend stores no dependencies between these steps. Loaded {displayDate(state.kind === "ready" ? state.loadedAt.toISOString() : null)}.</p>
       <details className="host-panel tp-readiness-summary">
         <summary>Text summary</summary>
         <ul>{[ready.workshop, ...ready.rows].map((row) => <li key={row.id} data-row={row.id} data-tone={row.tone} data-kind={row.kind}>
