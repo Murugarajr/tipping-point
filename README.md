@@ -59,9 +59,6 @@ released.
 - Host pages (`/host`, merchant console, Campaign Intelligence, readiness timeline) require a
   provisioned merchant sign-in. Public discovery currently lists no workshops: every published
   workshop, including the demo workshop, is hidden from discovery (hiding is not access control).
-- Tested application commit: `a7dcfa96f6e7033a506e24944560c6e02d4a91b7` (merge of PR #2 into
-  `release/auto-deadline`), live as Render deploy `dep-dbpmm3t6e07s73dfg6d0`. Documentation
-  commits made after that are not part of the tested application build.
 
 ## Architecture
 
