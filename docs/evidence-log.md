@@ -515,3 +515,106 @@ Preservation:
 - Unrelated campaigns, work rows and an abandoned unrelated `PREPARED` authorize operation were left unchanged.
 - No other campaign was processed.
 - No void, capture or authorization occurred beyond those listed above.
+
+## 10. Hosted verification on Render (2026-11-08 to 2026-11-10)
+
+**Scope.** This section records hosted evidence for the tested application commit
+`a7dcfa96f6e7033a506e24944560c6e02d4a91b7` (and, for §10.1, the earlier hosted commit
+`f580ddf`). It omits credentials, booking IDs, guest emails, guest-access links, PayPal order,
+authorization and payer identifiers, and tokens. Campaign and workshop references are kept only
+where they are needed to interpret the evidence.
+
+**Evidence classes** (do not conflate):
+
+- *Log*: uvicorn access lines or Render deploy records read by the agent with the Render CLI.
+- *Shell*: output of a command the user ran in the Render web Shell and pasted back.
+- *User-observed*: what the user reported seeing in a browser or provider dashboard.
+- *Public API*: unauthenticated read-only requests made by the agent.
+
+### 10.1 Earlier hosted PayPal Sandbox authorization/void (2026-11-08/09, commit `f580ddf`)
+
+On a hidden GBP 1.00, capacity-2 test campaign (`a0234e10-9dc6-4521-8610-3848e199793a`), one guest
+booking went reserve → order → Sandbox approval → `AUTHORIZED` → cancel → `VOIDED`, using the
+operator release command. No capture, refund or settlement occurred. Web PayPal credentials were
+removed afterwards. *(User-observed, Shell.)*
+
+### 10.2 Deployments on 2026-11-10 (all at `a7dcfa9`, web service only)
+
+| Deploy | Live (UTC) | Purpose |
+|---|---|---|
+| `dep-dbpj38jbc2fs73abeqp0` | 15:03 | PR #2 merge deployed; Rescue Analyst disabled |
+| `dep-dbpjbsqjnfac739jlso0` | 15:20 | Same commit; Rescue Analyst settings loaded |
+| `dep-dbpkurl6e07s73da96t0` | 17:09 | Same commit; saved `CHANNEL3_API_KEY` loaded |
+| `dep-dbpmd6u7bikc73csgdg0` | 18:47 | Same commit; PayPal Sandbox credentials loaded for the controlled test |
+| `dep-dbpmm3t6e07s73dfg6d0` | 19:06 | Same commit; PayPal credentials removed — **current** |
+
+Every deploy was an exact-commit API deploy; the Workflow service (`e3b9cc6`) and the suspended
+dispatcher (`f580ddf`) were not changed. *(Log.)*
+
+### 10.3 Rescue Analyst validation (2026-11-10)
+
+One approved prompt ("Explain this workshop's tipping point.") at 15:23:57 UTC produced exactly
+one `POST …/intelligence/analyst` → 200. OpenRouter showed two chat requests for
+`openai/gpt-4.1-mini`, 2,056 input and 133 output tokens, USD 0.001036 in total. *(Log,
+user-observed.)*
+
+### 10.4 Channel3 material search (2026-11-10)
+
+- 16:58–17:02 UTC: four Workbench searches returned `503` "not configured". The key had been saved
+  in Render but not loaded by the running process; the route returns this before any provider
+  request, so no Channel3 request was made. *(Log, source inspection.)*
+- After the 17:09 redeploy, one search ("Acrylics Paints") at 17:53:09 UTC returned `200`: one
+  search request, therefore one Channel3 request (`max_attempts=1`). 12 offers were displayed; the
+  rejected-offer count and Channel3 credit usage were not recorded. Results were of mixed relevance
+  (paint, markers, wall stickers, brushes, cosmetics). *(Log, user-observed.)*
+- At 17:54:44 UTC a `materials/select` request returned `200` and saved one offer into the draft's
+  costing. Whether that selection was intended is unconfirmed. The search-only test boundary was
+  therefore not maintained. *(Log, user-observed.)*
+
+Search relevance and costing suitability are not validated.
+
+### 10.5 Hosted PayPal Sandbox authorize → cancel → void (2026-11-10, commit `a7dcfa9`)
+
+| Step | Time (UTC) | Evidence |
+|---|---|---|
+| Read-only campaign-risk check, window 18:00–21:30 | 18:29:36 | `RESULT: PASS`; both existing OPEN campaigns not bookable in the window *(Shell)* |
+| Test workshop published and hidden | 18:36:47 / 18:37:35 | campaign `1179b4e9-29ce-42cc-8d7b-2b7683848583`, GBP 1.00, capacity 2, booking 18:35–20:56 *(Log, public API)* |
+| Risk re-check with only that campaign permitted | 18:42:05 | exactly one `PERMITTED`, `RESULT: PASS` *(Shell)* |
+| Sandbox credentials saved; same-commit redeploy | 18:46:51–18:47:52 | test campaign `available`; other campaigns unavailable *(Log, public API)* |
+| Reserve one place | 18:51:09 | `POST …/bookings` → 201, once *(Log)* |
+| Create Sandbox order | 18:51:15 | `POST …/paypal/order` → 200, once; approval host `www.sandbox.paypal.com` *(Log, user-observed)* |
+| Sandbox buyer approval | 18:51:27 | return to the booking page *(Log)* |
+| Authorize | 18:51:40 | `POST …/paypal/authorize` → 200, once; `AUTHORIZED`, GBP 1.00 *(Log, user-observed)* |
+| Request cancellation | 18:55:36 | `POST …/cancel` → 200, once; `RELEASE_PENDING` *(Log, user-observed)* |
+| Inspect (no network) | before void | `RELEASE_PENDING`, captured 0, refunded 0 *(Shell)* |
+| Release (void), run once | 19:00:09 | `VOIDED`, captured 0, refunded 0, seat released *(Shell, public API)* |
+| Credentials removed; same-commit redeploy | 19:05:51–19:06:59 | test campaign `payment_unconfigured` *(Log, public API)* |
+
+Not verified by this test: PayPal dashboard confirmation that the authorization shows "Voided"
+(pending user confirmation); hosted capture, refunds, below-threshold release and automatic
+deadline settlement.
+
+The published test campaign reused an existing draft workshop
+(`4c54a6d8-4ae7-4f3f-9f5a-3116b3f0d4a0`), the same draft as the §10.4 selection. Whether its
+frozen terms still contain that Channel3 material line, and whether the reuse was intended, are
+unresolved. The workshop is left unchanged. Its deadline settlement work stays queued and
+unprocessed because remote settlement is disabled and the dispatcher is suspended.
+
+Observation: Render's access log records the PayPal Sandbox return URL including its query string
+(order token and payer reference). These are Sandbox identifiers, not credentials; they are not
+reproduced here.
+
+### 10.6 Final hosted smoke test (2026-11-10, deploy `dep-dbpmm3t6e07s73dfg6d0`)
+
+*Public API (agent), 19:09 UTC:*
+
+- `/health/live` 200; `/health/ready` 200 with database and schema true.
+- Public and host routes 200; all 14 built frontend assets 200.
+- Unauthenticated `/api/me`, merchant workshop list and Analyst status → 401.
+- No workshop listed in public discovery. The test campaign reports `payment_unconfigured`, the
+  demo campaign `not_open_yet`, and the 8 Nov test campaign `closed`.
+
+*User-observed, signed in:* merchant console PASS; Campaign Intelligence dashboard and Tipping Meter
+PASS; Rescue Analyst badge "OpenRouter · openai/gpt-4.1-mini" and disclaimer PASS (no prompt
+submitted); Bryntum readiness timeline PASS; public test workshop with reservations disabled PASS.
+No errors or unexpected text were observed.
