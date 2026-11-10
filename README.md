@@ -478,3 +478,14 @@ All exact versions are pinned in `requirements.txt` for reproducibility.
 - The `.venv` directory is ignored by Git and must not be committed.
 - No credentials or secrets are required for the health endpoint.
 - Current hosted status and limitations are summarised at the top of this README.
+
+## License
+
+The original project code is licensed under the MIT License.
+See [LICENSE](LICENSE).
+
+Third-party libraries, services, fonts and assets remain subject
+to their respective licenses and terms.
+
+The Tipping Point name, logo and original branding assets are
+excluded from the MIT License. All rights reserved.
