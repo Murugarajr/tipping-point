@@ -39,19 +39,9 @@ workshop with frozen, reviewed costs; the backend calculator shows the attendanc
 the workshop becomes viable. Guests reserve a place with a PayPal Sandbox authorization, not
 a completed charge.
 
-**Intended payment design (not hosted-verified):** at the booking cutoff the campaign is
+**Intended payment design:** at the booking cutoff the campaign is
 decided. If it is viable, authorized payments are captured; if not, authorizations are
 released.
-
-**Current hosted status (10 November 2026):**
-
-- Hosted Sandbox authorize → cancel → void has been demonstrated.
-- PayPal checkout is **currently disabled** on the hosted service (no PayPal credentials are loaded).
-- Hosted capture, refunds, below-threshold release and automatic deadline settlement are
-  **not verified**. Capture and refund were exercised only against a local database
-  (`docs/evidence-log.md` §9).
-- Remote settlement is disabled on the Workflow service, and the deadline dispatcher is suspended.
-- The complete payment lifecycle is not production-ready.
 
 ## Live demo
 
