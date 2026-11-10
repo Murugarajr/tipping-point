@@ -6,6 +6,31 @@
 </h1>
 
 <p align="center">
+  <img alt="Python 3.13" src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white">
+  <img alt="FastAPI 0.162" src="https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-Alembic%200007-4169E1?logo=postgresql&logoColor=white">
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white">
+  <img alt="Vite 8" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
+</p>
+<p align="center">
+  <img alt="Channel3: material search" src="https://img.shields.io/badge/Channel3-material%20search-171817">
+  <img alt="AG Studio 3.0" src="https://img.shields.io/badge/AG%20Studio-3.0%20dashboard-171817">
+  <img alt="Bryntum Gantt 8.0" src="https://img.shields.io/badge/Bryntum-Gantt%208.0-171817">
+  <img alt="PayPal Sandbox" src="https://img.shields.io/badge/PayPal-Sandbox%20only-003087?logo=paypal&logoColor=white">
+  <img alt="APIMatic: contract review" src="https://img.shields.io/badge/APIMatic-contract%20review-171817">
+  <img alt="Hosted on Render" src="https://img.shields.io/badge/hosted%20on-Render-46E3B7?logo=render&logoColor=black">
+</p>
+<p align="center">
+  <a href="https://tipping-point-web.onrender.com"><img alt="Demo status" src="https://img.shields.io/website?url=https%3A%2F%2Ftipping-point-web.onrender.com%2F&label=demo&up_message=online&down_message=offline"></a>
+  <img alt="Status: Sandbox prototype" src="https://img.shields.io/badge/status-sandbox%20prototype-FF342C">
+  <img alt="PayPal checkout disabled" src="https://img.shields.io/badge/checkout-disabled-lightgrey">
+  <a href="#test-evidence"><img alt="Tests: 525 backend, 91 frontend passing" src="https://img.shields.io/badge/tests-525%20backend%20%C2%B7%2091%20frontend%20passing-2EA44F"></a>
+  <img alt="Last commit" src="https://img.shields.io/github/last-commit/Murugarajr/tipping-point/main?label=last%20commit">
+  <img alt="Top language" src="https://img.shields.io/github/languages/top/Murugarajr/tipping-point">
+</p>
+
+<p align="center">
   <img src="docs/images/tipping-point-summary.png" alt="Tipping Point summary graphic. Headline: Workshops that run when the numbers work. An illustrative bar chart of estimated surplus by attendance (£25 ticket, 10 places) marks the tipping point at 5 guests. Four steps: plan with real costs; find the tipping point; guests reserve with a PayPal Sandbox authorization, a hold rather than a charge; decide at the cutoff, labelled by design: this is the intended flow, and automatic deadline settlement is not verified on the hosted service. Built with Channel3, AG Studio, Bryntum, PayPal and APIMatic; hosted on Render. Footer: PayPal Sandbox prototype; hosted demo verified authorize, cancel and void." width="100%">
 </p>
 
