@@ -206,3 +206,131 @@ First confirm the database target with `.venv/bin/python scripts/verify_db_ident
 ```
 
 Rerun step 3 to poll a `PENDING` refund. A `FAILED` or `CANCELLED` refund, or one that stays unknown, remains visible as `REVIEW_REQUIRED`. It is not reported as completed cleanup.
+
+## Hosted demo reactivation (Sandbox only; added 2026-11-10)
+
+**Current status is separate from this procedure.** Hosted Sandbox authorize → cancel → void was
+demonstrated on 2026-11-10 (`docs/evidence-log.md` §10.5). PayPal checkout is **currently
+disabled** on the hosted web service: no PayPal credentials are loaded. Use this procedure only to
+re-enable checkout temporarily for a demonstration. Hosted capture, refunds, below-threshold
+release and automatic deadline settlement remain unverified, and this procedure does not
+exercise them.
+
+Every step below that writes to the hosted service, changes a setting, deploys or calls PayPal
+needs its own explicit approval. Never retry a payment action blindly.
+
+1. **Booking window.** Choose one campaign whose booking window covers the demonstration,
+   normally a fresh hidden GBP 1.00 workshop with capacity 2, minimum attendance 1, no costs and a
+   window of at most 48 hours. The authorization must cover the cutoff plus the 30-minute settlement
+   deadline plus the 6-hour safety buffer, within 72 hours of authorization. Hiding a workshop from
+   discovery is not booking isolation.
+2. **Set a firm credential-removal deadline**, then run the campaign-risk check below in the web
+   service Shell. Set `S` to at least one hour before credential activation, `E` to at least one
+   hour after the removal deadline, and `TEST` to the demo campaign UUID. Proceed only with exactly
+   one `PERMITTED` line and `RESULT: PASS`. Any `STOP` line ends the attempt.
+3. **Credentials.** On the web service only, restore `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and
+   `PAYPAL_EXPECTED_PAYEE` from the existing Sandbox REST app with "Save only". `PAYPAL_ENV` accepts
+   only `sandbox`; confirm `APP_PUBLIC_URL` is present. Do not change the Workflow service,
+   remote-settlement settings or the dispatcher.
+4. **Same-commit redeploy** of the currently live commit. Saved variables are not loaded by a
+   running process. Verify `/health/ready`, that the demo campaign reports `available`, and that no
+   other campaign does.
+5. **One Sandbox buyer flow** in a private window at `/continue?workshop=<WORKSHOP_UUID>`: reserve
+   → create order (approval host must be `www.sandbox.paypal.com`) → approve as the Sandbox buyer →
+   authorize. Steps must fit within the 10-minute reservation hold.
+6. **Cancel and void.** Request cancellation (`RELEASE_PENDING`; no provider call). In the Shell:
+
+   ```bash
+   python scripts/reconcile_guest_booking.py <BOOKING_UUID>                                 # inspect only
+   python scripts/reconcile_guest_booking.py <BOOKING_UUID> --allow-network --release       # void, once
+   ```
+
+   Expect `VOIDED`, captured 0, refunded 0, then confirm "Voided" in the Sandbox business account.
+   If the void fails or is uncertain, do not re-run it; record the exact state as unresolved.
+7. **Cleanup before the deadline.** Delete the three variables ("Save only") **and** redeploy the
+   same commit: deleting alone does not unload them from the running process. Verify the demo
+   campaign reports `payment_unconfigured` and health checks pass.
+
+### Read-only campaign-risk check (web service Shell, from `~/project/src`)
+
+It mirrors the reservation route's conditions for every campaign, whatever its status or
+visibility, and flags existing bookings that enabled credentials could act on. It prints IDs,
+titles, times and states only, inside a read-only transaction.
+
+```bash
+python - <<'PYEOF'
+import datetime as dt
+from sqlalchemy import text, select, func
+from tipping_point.db.engine import SessionLocal
+from tipping_point.db.models import Campaign, CampaignTerms, Workshop, Booking
+from tipping_point.economics import CampaignFinancialsInput, build_snapshot_hash
+from tipping_point.guest.service import capacity_count
+
+UTC = dt.timezone.utc
+S = dt.datetime(YYYY, MO, DD, HH, MI, tzinfo=UTC)   # activation minus at least 1 h
+E = dt.datetime(YYYY, MO, DD, HH, MI, tzinfo=UTC)   # removal deadline plus at least 1 h
+TEST = None  # or "<CAMPAIGN_UUID>": the only campaign permitted to be bookable
+
+with SessionLocal() as s:
+    s.execute(text("SET TRANSACTION READ ONLY"))
+    now = s.scalar(text("SELECT now()"))
+    print("db_now", now, "| window", S, "->", E, "| permitted", TEST)
+    print("campaigns_by_status", dict(s.execute(select(Campaign.status, func.count()).group_by(Campaign.status)).all()))
+    stop = 0
+    permitted_seen = False
+    for c in s.scalars(select(Campaign).order_by(Campaign.created_at)):
+        t = s.get(CampaignTerms, c.terms_id)
+        w = s.get(Workshop, c.workshop_id)
+        why = []
+        if c.status != "OPEN":
+            why.append("status=" + c.status)
+        if t is None or t.workshop_id != c.workshop_id or t.version != c.terms_version:
+            why.append("terms mismatch (route returns 503)")
+        else:
+            if not t.is_frozen:
+                why.append("terms not frozen")
+            if t.currency != "GBP":
+                why.append("currency=" + t.currency)
+            if t.opens_at is None or t.closes_at is None:
+                why.append("no open/close dates")
+        if not why:
+            close = min(c.cutoff_at, t.closes_at)
+            if not (t.opens_at <= E and close > S and t.opens_at < close):
+                why.append(f"outside window (opens {t.opens_at:%Y-%m-%d %H:%M}Z, closes {close:%Y-%m-%d %H:%M}Z)")
+        if why:
+            print("NOT_BOOKABLE ", c.id, c.workshop_id, "; ".join(why))
+            continue
+        try:
+            i = CampaignFinancialsInput.model_validate(t.financial_inputs)
+            integrity = (i.capacity == c.capacity and i.ticket_price_minor > 0 and i.fee_estimate is not None
+                         and build_snapshot_hash(i, opens_at=t.opens_at, closes_at=t.closes_at) == t.snapshot_hash)
+        except Exception as exc:
+            integrity = "error:" + type(exc).__name__
+        seats = c.capacity - capacity_count(s, c.id, now)
+        label = "PERMITTED   " if TEST is not None and str(c.id) == TEST else "STOP        "
+        if label.startswith("STOP"):
+            stop += 1
+        else:
+            permitted_seen = True
+        print(label, "campaign", c.id, "workshop", w.id, repr(w.title[:60]),
+              "hidden" if w.hidden_from_discovery_at else "listed", "(hiding does not block booking)",
+              f"| opens {t.opens_at:%Y-%m-%d %H:%M}Z closes {close:%Y-%m-%d %H:%M}Z",
+              "| seats_now", seats, "| integrity_ok", integrity)
+    print("bookings_by_state", dict(s.execute(select(Booking.state, func.count()).group_by(Booking.state)).all()))
+    for b in s.scalars(select(Booking).where(Booking.state.in_(("AUTHORIZATION_PENDING", "REVIEW_REQUIRED"))).order_by(Booking.created_at)):
+        stop += 1
+        print("STOP         booking", b.id, "campaign", b.campaign_id, b.state, "created", b.created_at)
+    for b in s.scalars(select(Booking).where(Booking.state.in_(("CHECKOUT_RESERVED", "AWAITING_APPROVAL")),
+                                             Booking.cancelled_at.is_(None), Booking.reservation_expires_at > S)):
+        stop += 1
+        print("STOP         booking", b.id, "campaign", b.campaign_id, b.state, "hold until", b.reservation_expires_at)
+    if TEST is not None and not permitted_seen:
+        stop += 1
+        print("STOP         permitted test campaign", TEST, "was not found as bookable in the window (wrong ID or dates)")
+    print("RESULT:", "PASS" if stop == 0 else f"STOP ({stop} item(s) above)")
+    s.rollback()
+PYEOF
+```
+
+Replace the `YYYY, MO, DD, HH, MI` placeholders (year, month, day, hour, minute) with integers before running; the block is not
+runnable as written.
