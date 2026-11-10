@@ -1,4 +1,13 @@
-# Tipping Point
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/tipping-point-logo-on-white.png">
+    <img src="docs/images/tipping-point-logo.png" alt="Tipping Point" width="420">
+  </picture>
+</h1>
+
+<p align="center">
+  <img src="docs/images/tipping-point-summary.png" alt="Tipping Point summary graphic. Headline: Workshops that run when the numbers work. An illustrative bar chart of estimated surplus by attendance (£25 ticket, 10 places) marks the tipping point at 5 guests. Four steps: plan with real costs; find the tipping point; guests reserve with a PayPal Sandbox authorization, a hold rather than a charge; decide at the cutoff, labelled by design: this is the intended flow, and automatic deadline settlement is not verified on the hosted service. Built with Channel3, AG Studio, Bryntum, PayPal and APIMatic; hosted on Render. Footer: PayPal Sandbox prototype; hosted demo verified authorize, cancel and void." width="100%">
+</p>
 
 Tipping Point is a Sandbox prototype for threshold-funded workshops. A host publishes a
 workshop with frozen, reviewed costs; the backend calculator shows the attendance at which
