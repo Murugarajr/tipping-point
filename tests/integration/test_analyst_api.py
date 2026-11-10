@@ -150,6 +150,54 @@ def test_not_configured_disables_only_the_analyst(owned, app_state):
     assert calls == []
 
 
+SECRET_LIKE = "sk-looks-like-a-key 0000"
+
+
+def _env_settings(monkeypatch, **env):
+    """Settings built through the real environment source (and the analyst recovery path), not model_copy."""
+    from tipping_point.settings import AppSettings
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    return AppSettings()
+
+
+def test_invalid_analyst_settings_do_not_prevent_startup_and_warn_by_name_only(monkeypatch, caplog):
+    import logging
+    from tipping_point.app import create_app
+    settings = _env_settings(monkeypatch, RESCUE_ANALYST_ENABLED="maybe", RESCUE_ANALYST_PROVIDER="anthropic", RESCUE_ANALYST_MODEL=SECRET_LIKE)
+    with caplog.at_level(logging.WARNING, logger="tipping_point.app"):
+        started = create_app(settings)
+    assert TestClient(started).get("/health/live").status_code == 200, "the application starts and serves"
+    warnings = [r.getMessage() for r in caplog.records if r.name == "tipping_point.app" and r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    for name in ("RESCUE_ANALYST_ENABLED", "RESCUE_ANALYST_MODEL", "RESCUE_ANALYST_PROVIDER"):
+        assert name in warnings[0]
+    assert SECRET_LIKE not in caplog.text and "anthropic" not in caplog.text and "maybe" not in caplog.text, "values never logged"
+
+
+@pytest.mark.parametrize("env,provider", [
+    ({"RESCUE_ANALYST_ENABLED": "maybe", "OPENROUTER_API_KEY": OR_KEY, "RESCUE_ANALYST_MODEL": MODEL}, "OpenRouter"),
+    ({"RESCUE_ANALYST_ENABLED": "true", "RESCUE_ANALYST_PROVIDER": "anthropic", "OPENROUTER_API_KEY": OR_KEY, "RESCUE_ANALYST_MODEL": MODEL}, None),
+    ({"RESCUE_ANALYST_ENABLED": "true", "OPENROUTER_API_KEY": OR_KEY, "RESCUE_ANALYST_MODEL": SECRET_LIKE}, "OpenRouter"),
+])
+def test_misconfigured_status_is_safe_and_post_makes_no_provider_request(owned, app_state, monkeypatch, env, provider):
+    app.state.settings = _env_settings(monkeypatch, **env)
+    calls = []
+    app.state.analyst_transport = httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(500))
+    app.state.analyst_limiter = AnalystLimiter()
+    client, info = logged_in_client(owned)
+    workshop = _workshop(client, info["csrf"])
+    status = client.get(_url(workshop))
+    assert status.status_code == 200
+    assert status.json() == {"available": False, "status": "misconfigured", "provider": provider, "model": None}
+    assert SECRET_LIKE not in status.text and "anthropic" not in status.text and "maybe" not in status.text
+    response = _ask(client, info["csrf"], workshop)
+    assert response.status_code == 503 and response.json()["detail"]["code"] == "ANALYST_NOT_CONFIGURED"
+    assert SECRET_LIKE not in response.text
+    assert client.get(f"/api/merchant/workshops/{workshop}").status_code == 200, "dashboard data still loads"
+    assert calls == [], "no provider request in the misconfigured state"
+
+
 def test_full_tool_cycle_is_read_only_and_sanitised(owned, analyst):
     provider = analyst(Provider([
         reply(tool_calls=[("call_1", "get_workshop_overview", "{}"), ("call_2", "compare_attendance", json.dumps({"attendances": [4, 5]}))]),

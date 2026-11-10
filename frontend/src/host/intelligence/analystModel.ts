@@ -13,7 +13,7 @@ export type VisualizationPreset = "revenue_vs_costs" | "surplus_by_attendance" |
 
 export interface AnalystStatus {
   available: boolean;
-  status: "ready" | "disabled" | "missing_key" | "missing_model";
+  status: "ready" | "disabled" | "missing_key" | "missing_model" | "misconfigured";
   provider: string | null;
   model: string | null;
 }
@@ -58,6 +58,7 @@ const STATUS_COPY: Record<AnalystStatus["status"], string> = {
   disabled: "Analyst not configured: an operator has not enabled it on the server.",
   missing_key: "Analyst not configured: the server has no credential for the selected provider.",
   missing_model: "Analyst not configured: the server has no model selected.",
+  misconfigured: "Analyst not configured: a server setting is invalid; an operator must correct it.",
 };
 export const statusText = (status: AnalystStatus) => STATUS_COPY[status.status];
 export const connectionLabel = (status: Pick<AnalystStatus, "provider" | "model">) =>

@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 import ipaddress
 import re
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SESSION_COOKIE_NAME = "tipping_session"
@@ -25,6 +25,24 @@ GUEST_CSRF_COOKIE_NAME = "tipping_guest_csrf"
 GUEST_BOOTSTRAP_COOKIE_NAME = "tipping_guest_bootstrap"
 # Provider model slugs, e.g. "openai/gpt-4o-mini", "anthropic/claude-sonnet-4", "vendor/model:free".
 RESCUE_ANALYST_MODEL_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
+# The only settings whose invalid values degrade to a non-fatal analyst status (field -> primary environment name).
+RESCUE_ANALYST_SETTING_NAMES = {
+    "rescue_analyst_enabled": "RESCUE_ANALYST_ENABLED",
+    "rescue_analyst_provider": "RESCUE_ANALYST_PROVIDER",
+    "rescue_analyst_model": "RESCUE_ANALYST_MODEL",
+}
+
+
+def _analyst_input_names() -> dict[str, str]:
+    """Lower-cased input keys (field name and every accepted alias) -> analyst field name."""
+    names: dict[str, str] = {}
+    for field in RESCUE_ANALYST_SETTING_NAMES:
+        names[field.lower()] = field
+        alias = AppSettings.model_fields[field].validation_alias
+        for choice in getattr(alias, "choices", ()):
+            if isinstance(choice, str):
+                names[choice.lower()] = field
+    return names
 
 
 class AppSettings(BaseSettings):
@@ -36,6 +54,9 @@ class AppSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
+        # Settings validation errors name the failing setting but never echo its input value
+        # (a credential may have been pasted into the wrong setting; startup errors reach hosted logs).
+        hide_input_in_errors=True,
     )
 
     environment: Literal["local", "hosted"] = Field(
@@ -245,6 +266,21 @@ class AppSettings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "TIPPING_POINT_OPENAI_API_KEY", "openai_api_key"),
     )
 
+    # Names (never values) of Rescue Analyst settings whose values were invalid and were dropped at startup.
+    _rescue_analyst_invalid: frozenset[str] = PrivateAttr(default_factory=frozenset)
+
+    @field_validator("rescue_analyst_enabled", mode="before")
+    @classmethod
+    def blank_rescue_analyst_enabled_is_disabled(cls, value):
+        """A blank flag (e.g. `RESCUE_ANALYST_ENABLED=`) means not enabled, not invalid."""
+        return False if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("rescue_analyst_provider", mode="before")
+    @classmethod
+    def blank_rescue_analyst_provider_is_default(cls, value):
+        """A blank provider means the default provider, not an invalid one."""
+        return "openrouter" if isinstance(value, str) and not value.strip() else value
+
     @field_validator("rescue_analyst_model")
     @classmethod
     def validate_rescue_analyst_model(cls, value):
@@ -256,15 +292,62 @@ class AppSettings(BaseSettings):
             raise ValueError("rescue_analyst_model must be a provider model identifier such as vendor/model-name")
         return value
 
+    @model_validator(mode="wrap")
+    @classmethod
+    def isolate_invalid_rescue_analyst_settings(cls, data, handler):
+        """Invalid Rescue Analyst values disable only the analyst; they never stop the application starting.
+
+        Narrow by design: the original error is re-raised unchanged unless every error is attributable to one of
+        the three analyst settings (by field name or accepted environment name). Those values are dropped and the
+        rest is validated again; only the setting names are recorded. Values are never logged or exposed.
+        """
+        try:
+            return handler(data)
+        except ValidationError as original:
+            if not isinstance(data, dict):
+                raise
+            names = _analyst_input_names()
+            invalid: set[str] = set()
+            for error in original.errors(include_input=False):
+                loc = error.get("loc") or ()
+                field = names.get(loc[0].lower()) if loc and isinstance(loc[0], str) else None
+                if field is None:
+                    raise original from None
+                invalid.add(field)
+            cleaned = {key: value for key, value in data.items()
+                       if not (isinstance(key, str) and names.get(key.lower()) in invalid)}
+            try:
+                settings = handler(cleaned)
+            except ValidationError:
+                raise original from None
+            settings._rescue_analyst_invalid = frozenset(invalid)
+            return settings
+
+    @property
+    def rescue_analyst_invalid_settings(self) -> tuple[str, ...]:
+        """Environment names of analyst settings that were invalid (names only, sorted)."""
+        return tuple(sorted(RESCUE_ANALYST_SETTING_NAMES[field] for field in self._rescue_analyst_invalid))
+
     def rescue_analyst_key(self) -> SecretStr | None:
         """Only the selected provider's own credential; never the other provider's."""
+        if "rescue_analyst_provider" in self._rescue_analyst_invalid:
+            return None
         key = self.openrouter_api_key if self.rescue_analyst_provider == "openrouter" else self.openai_api_key
         return key if key is not None and key.get_secret_value().strip() else None
 
     @property
-    def rescue_analyst_status(self) -> Literal["ready", "disabled", "missing_key", "missing_model"]:
+    def rescue_analyst_provider_valid(self) -> bool:
+        return "rescue_analyst_provider" not in self._rescue_analyst_invalid
+
+    @property
+    def rescue_analyst_status(self) -> Literal["ready", "disabled", "missing_key", "missing_model", "misconfigured"]:
+        invalid = self._rescue_analyst_invalid
+        if "rescue_analyst_enabled" in invalid:
+            return "misconfigured"
         if not self.rescue_analyst_enabled:
             return "disabled"
+        if invalid & {"rescue_analyst_provider", "rescue_analyst_model"}:
+            return "misconfigured"
         if self.rescue_analyst_key() is None:
             return "missing_key"
         if not self.rescue_analyst_model:

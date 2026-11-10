@@ -57,7 +57,7 @@ class AnalystRequest(BaseModel):
 
 class AnalystStatusOut(BaseModel):
     available: bool
-    status: Literal["ready", "disabled", "missing_key", "missing_model"]
+    status: Literal["ready", "disabled", "missing_key", "missing_model", "misconfigured"]
     provider: str | None = None
     model: str | None = None
 
@@ -87,9 +87,10 @@ class AnalystResponseOut(BaseModel):
 def _status(request: Request) -> AnalystStatusOut:
     settings = request.app.state.settings
     status = settings.rescue_analyst_status
-    preset = PROVIDERS[settings.rescue_analyst_provider]
+    # An invalid provider setting has no preset: report no provider rather than guessing one.
+    preset = PROVIDERS.get(settings.rescue_analyst_provider) if settings.rescue_analyst_provider_valid else None
     return AnalystStatusOut(
-        available=status == "ready", status=status, provider=preset.label,
+        available=status == "ready", status=status, provider=preset.label if preset else None,
         model=settings.rescue_analyst_model if status == "ready" else None,
     )
 

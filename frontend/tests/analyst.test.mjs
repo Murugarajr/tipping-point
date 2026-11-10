@@ -31,7 +31,8 @@ test("history is bounded to the server's limits and always ends with the user's 
 test("status and connection labels; not-configured copy names no secret", () => {
   assert.equal(connectionLabel({ provider: "OpenRouter", model: "vendor/m" }), "OpenRouter · vendor/m");
   assert.equal(connectionLabel({ provider: "OpenRouter", model: null }), "OpenRouter");
-  for (const s of ["disabled", "missing_key", "missing_model"]) assert.match(statusText({ status: s }), /^Analyst not configured/);
+  for (const s of ["disabled", "missing_key", "missing_model", "misconfigured"]) assert.match(statusText({ status: s }), /^Analyst not configured/);
+  assert.equal(statusText({ status: "misconfigured" }), "Analyst not configured: a server setting is invalid; an operator must correct it.");
 });
 
 test("errors map to fixed copy; unknown provider text never reaches the page", () => {

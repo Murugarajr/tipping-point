@@ -100,15 +100,98 @@ def test_settings_select_only_the_chosen_providers_key_and_disable_only_the_anal
     assert KEY not in repr(s) and KEY not in str(s.model_dump())
 
 
+# ---- startup resilience: invalid analyst settings never stop the application ------------------------
+
+# Looks like a credential pasted into the wrong setting; it must never be echoed anywhere.
+SECRET_LIKE = "sk-looks-like-a-key 0000"
+
+
+def _local(**values):
+    return AppSettings(_env_file=None, environment="local", allow_insecure_dev_cookies=True, **values)
+
+
+def test_missing_and_blank_analyst_settings_stay_gracefully_unconfigured():
+    assert _local().rescue_analyst_status == "disabled", "disabled by default"
+    assert _local(RESCUE_ANALYST_ENABLED="").rescue_analyst_status == "disabled", "blank flag means not enabled"
+    assert _local(RESCUE_ANALYST_ENABLED=True, OPENROUTER_API_KEY=KEY).rescue_analyst_status == "missing_model"
+    assert _local(RESCUE_ANALYST_ENABLED=True, RESCUE_ANALYST_MODEL=MODEL).rescue_analyst_status == "missing_key"
+    blank_provider = _local(RESCUE_ANALYST_ENABLED=True, RESCUE_ANALYST_PROVIDER=" ", OPENROUTER_API_KEY=KEY, RESCUE_ANALYST_MODEL=MODEL)
+    assert (blank_provider.rescue_analyst_provider, blank_provider.rescue_analyst_status) == ("openrouter", "ready")
+    for truthy in ("true", "yes", "1"):
+        assert _local(RESCUE_ANALYST_ENABLED=truthy, OPENROUTER_API_KEY=KEY, RESCUE_ANALYST_MODEL=MODEL).rescue_analyst_status == "ready"
+    for s in (_local(), _local(RESCUE_ANALYST_ENABLED="")):
+        assert s.rescue_analyst_invalid_settings == ()
+
+
+@pytest.mark.parametrize("bad_model", [SECRET_LIKE, "https://example.test/model", "vendor/../model", "vendor//model"])
+def test_invalid_model_is_misconfigured_not_fatal(bad_model):
+    s = _local(RESCUE_ANALYST_ENABLED=True, OPENROUTER_API_KEY=KEY, RESCUE_ANALYST_MODEL=bad_model)
+    assert s.rescue_analyst_status == "misconfigured"
+    assert s.rescue_analyst_model is None and s.rescue_analyst_invalid_settings == ("RESCUE_ANALYST_MODEL",)
+    assert bad_model not in repr(s) and bad_model not in str(s.model_dump())
+    # Disabled stays disabled; the invalid name is still recorded for the operator warning.
+    off = _local(RESCUE_ANALYST_MODEL=bad_model)
+    assert off.rescue_analyst_status == "disabled" and off.rescue_analyst_invalid_settings == ("RESCUE_ANALYST_MODEL",)
+
+
+def test_unknown_provider_is_misconfigured_and_selects_no_key():
+    s = _local(RESCUE_ANALYST_ENABLED=True, RESCUE_ANALYST_PROVIDER="anthropic", OPENROUTER_API_KEY=KEY, OPENAI_API_KEY=KEY, RESCUE_ANALYST_MODEL=MODEL)
+    assert s.rescue_analyst_status == "misconfigured"
+    assert s.rescue_analyst_provider_valid is False and s.rescue_analyst_key() is None
+    assert s.rescue_analyst_invalid_settings == ("RESCUE_ANALYST_PROVIDER",)
+
+
+@pytest.mark.parametrize("flag", ["maybe", "enable", "2"])
+def test_non_boolean_enable_flag_is_misconfigured_even_with_valid_provider_settings(flag):
+    s = _local(RESCUE_ANALYST_ENABLED=flag, OPENROUTER_API_KEY=KEY, RESCUE_ANALYST_MODEL=MODEL)
+    assert s.rescue_analyst_status == "misconfigured", "misconfigured never becomes ready"
+    assert s.rescue_analyst_invalid_settings == ("RESCUE_ANALYST_ENABLED",)
+
+
+@pytest.mark.parametrize("name", ["RESCUE_ANALYST_MODEL", "TIPPING_POINT_RESCUE_ANALYST_MODEL", "rescue_analyst_model"])
+def test_invalid_values_from_any_accepted_environment_name_are_isolated(monkeypatch, name):
+    monkeypatch.setenv(name, SECRET_LIKE)
+    monkeypatch.setenv("RESCUE_ANALYST_PROVIDER", "anthropic")
+    monkeypatch.setenv("RESCUE_ANALYST_ENABLED", "maybe")
+    s = AppSettings()  # the real environment source path, including the test settings file
+    assert s.rescue_analyst_status == "misconfigured"
+    assert s.rescue_analyst_invalid_settings == ("RESCUE_ANALYST_ENABLED", "RESCUE_ANALYST_MODEL", "RESCUE_ANALYST_PROVIDER")
+    assert SECRET_LIKE not in repr(s) and SECRET_LIKE not in str(s.model_dump())
+
+
+@pytest.mark.parametrize("extra", [
+    {"public_url": "ftp://not-allowed.example"},
+    {"remote_settlement_mode": "campaign_allowlist", "remote_settlement_campaign_ids": "not-a-uuid"},
+])
+def test_unrelated_invalid_settings_still_fail_startup_even_with_invalid_analyst_settings(extra):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        _local(**extra)
+    with pytest.raises(ValidationError) as combined:
+        _local(RESCUE_ANALYST_MODEL=SECRET_LIKE, **extra)
+    fields = {str(e["loc"][0]).lower() for e in combined.value.errors(include_input=False)}
+    assert "rescue_analyst_model" in fields and fields - {"rescue_analyst_model"}, "original error (analyst + unrelated) re-raised unchanged"
+    # The full error text (what a startup traceback prints) names the failing settings but echoes no input value.
+    text = str(combined.value)
+    assert SECRET_LIKE not in text and SECRET_LIKE not in repr(combined.value)
+    for name in fields - {"rescue_analyst_model"}:
+        assert name in text.lower(), f"the failing non-Analyst setting {name} is identified for diagnosis"
+    for value in extra.values():
+        assert f"input_value='{value}'" not in text, "unrelated input values are hidden as well"
+
+
 @pytest.mark.parametrize("bad", ["https://evil.example/v1", "model with space", "a//b", "../x", "x?y=1", "m\nodel", "-leading"])
 def test_model_identifier_rejects_urls_and_injection(bad):
-    with pytest.raises(ValueError):
-        AppSettings(_env_file=None, RESCUE_ANALYST_MODEL=bad)
+    # Rejected without stopping startup: the value is dropped, never used, and the analyst is not ready.
+    s = AppSettings(_env_file=None, RESCUE_ANALYST_ENABLED=True, OPENROUTER_API_KEY=KEY, RESCUE_ANALYST_MODEL=bad)
+    assert s.rescue_analyst_model is None and s.rescue_analyst_status == "misconfigured"
+    assert s.rescue_analyst_invalid_settings == ("RESCUE_ANALYST_MODEL",)
 
 
 def test_unknown_provider_is_rejected():
-    with pytest.raises(ValueError):
-        AppSettings(_env_file=None, RESCUE_ANALYST_PROVIDER="custom")
+    s = AppSettings(_env_file=None, RESCUE_ANALYST_ENABLED=True, RESCUE_ANALYST_PROVIDER="custom", OPENROUTER_API_KEY=KEY, RESCUE_ANALYST_MODEL=MODEL)
+    assert s.rescue_analyst_status == "misconfigured" and s.rescue_analyst_key() is None
+    assert s.rescue_analyst_invalid_settings == ("RESCUE_ANALYST_PROVIDER",)
     with pytest.raises(AnalystConfigError):
         ChatCompletionsClient(provider="custom", api_key=KEY, model=MODEL)
 
