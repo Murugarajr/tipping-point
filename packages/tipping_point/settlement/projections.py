@@ -44,6 +44,7 @@ def campaign_projection(db, campaign):
         "refund_pending": sum(b.state == "REFUND_PENDING" for b in bookings),
         "review_required": bool(decision and decision.review_required) or any(b.state == "REVIEW_REQUIRED" for b in bookings),
         "settlement_deadline": decision.settlement_deadline if decision else campaign.settlement_deadline,
+        "decided_at": decision.frozen_at if decision else None,
         "fee_basis": post.get("fee_basis", "estimated"),
         "actual_fees_minor": post.get("actual_fees_minor"),
         "estimated_fees_minor": point.get("estimated_fees_minor"),

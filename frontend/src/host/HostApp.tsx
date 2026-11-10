@@ -4,7 +4,7 @@ import * as api from "../api";
 import type { HostVisibilityFilter, SessionInfo, Workshop, WorkshopVisibilityResult } from "../types";
 import { Arrow, Mark } from "../public/Artwork";
 import { navigate, useLocation } from "../navigation";
-import { displayDate, intelligenceRoute, money, safeHostReturn, workshopRoute } from "./model";
+import { displayDate, intelligenceRoute, money, readinessRoute, safeHostReturn, workshopRoute } from "./model";
 import Workbench from "./Workbench";
 import { VisibilityControl } from "./Visibility";
 import "./host.css";
@@ -13,6 +13,7 @@ import "./host.css";
 const MerchantConsole = lazy(() => import("./MerchantConsole"));
 // AG Studio Campaign Intelligence; its chunks load only on /host/workshops/{id}/intelligence.
 const CampaignIntelligence = lazy(() => import("./intelligence/CampaignIntelligence"));
+const ReadinessView = lazy(() => import("./readiness/ReadinessView"));
 export const CONSOLE_PATH = "/host/console";
 
 type SessionState = "loading" | "anonymous" | "authenticated" | "expired" | "unavailable";
@@ -98,6 +99,7 @@ export default function HostApp() {
 
   const authenticated = state === "authenticated" && path !== "/host/login";
   const intelligenceId = intelligenceRoute.exec(path)?.[1] ?? null;
+  const readinessId = readinessRoute.exec(path)?.[1] ?? null;
   return <>
     {state === "loading" && <main className="host-shell host-loading"><h1>Checking your session…</h1></main>}
     {state === "unavailable" && <main className="merchant-auth login-shell"><section className="login-card"><a href="/">← Public browsing</a><h1>Host workspace unavailable.</h1><p role="alert">Your session could not be checked. This is not an invalid-credentials result.</p><button className="primary" onClick={() => window.location.reload()}>Try again</button></section></main>}
@@ -112,7 +114,8 @@ export default function HostApp() {
         {authenticated && !editorId && path === "/host" && <WorkshopList onUnauthorized={expire} />}
         {authenticated && !editorId && path === CONSOLE_PATH && <Suspense fallback={<div className="host-panel" role="status">Loading table view…</div>}><MerchantConsole onUnauthorized={expire} /></Suspense>}
         {authenticated && !editorId && intelligenceId && <Suspense fallback={<div className="host-panel" role="status">Loading Campaign Intelligence…</div>}><CampaignIntelligence key={`${owner.current}:${intelligenceId}`} id={intelligenceId} onUnauthorized={expire} /></Suspense>}
-        {authenticated && !editorId && path !== "/host" && path !== CONSOLE_PATH && !intelligenceId && <section className="host-panel"><h1>Workspace page not found.</h1><button className="host-button" onClick={() => navigate("/host")}>Your workshops</button></section>}
+        {authenticated && !editorId && readinessId && <Suspense fallback={<div className="host-panel" role="status">Loading readiness timeline…</div>}><ReadinessView key={`${owner.current}:${readinessId}`} id={readinessId} onUnauthorized={expire} /></Suspense>}
+        {authenticated && !editorId && path !== "/host" && path !== CONSOLE_PATH && !intelligenceId && !readinessId && <section className="host-panel"><h1>Workspace page not found.</h1><button className="host-button" onClick={() => navigate("/host")}>Your workshops</button></section>}
       </main>
     </div>
   </>;

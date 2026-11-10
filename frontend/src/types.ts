@@ -140,6 +140,8 @@ export interface SettlementStatus {
   refund_pending: number;
   review_required: boolean;
   settlement_deadline: string | null;
+  /** Read-only: when the deadline decision was frozen; null before a decision. */
+  decided_at?: string | null;
   fee_basis: "estimated" | "actual" | "mixed";
   actual_fees_minor: number | null;
   estimated_fees_minor: number | null;
@@ -157,6 +159,8 @@ export interface Campaign {
   terms_version: number;
   terms_id: string;
   terms_snapshot_hash: string;
+  /** Read-only: when the campaign was published. */
+  published_at?: string | null;
   settlement?: SettlementStatus | null;
 }
 export interface OfferProvenance {
