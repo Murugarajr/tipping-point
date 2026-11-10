@@ -8,6 +8,7 @@ probe — it does not claim database or sponsor readiness.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from . import __version__
 from .analyst import AnalystLimiter
 from .api import analyst_routes, auth_routes, guest_routes, material_routes, public_routes, workshop_routes
 from .settings import AppSettings
+
+logger = logging.getLogger(__name__)
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _AUTH_PATHS = frozenset(
@@ -35,6 +38,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     """Build the application with explicit security configuration."""
     settings = settings or AppSettings()
     settings.validate_startup()
+    if settings.rescue_analyst_invalid_settings:
+        # Names only: an invalid value is never logged (it could be a credential pasted into the wrong setting).
+        logger.warning("Rescue Analyst disabled: invalid setting(s) %s; values not logged. The rest of the application is unaffected.",
+                       ", ".join(settings.rescue_analyst_invalid_settings))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
