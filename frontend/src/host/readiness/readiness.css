@@ -1,0 +1,39 @@
+/* Readiness view. Every rule is scoped under .tp-readiness / .tp-readiness-page; Bryntum's own CSS is untouched. */
+.tp-readiness-page { display: grid; gap: 16px; }
+.tp-readiness-links { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+
+.tp-readiness { padding: 0; overflow: hidden; height: 460px; font-family: var(--tp-font); }
+.tp-readiness .b-gantt { height: 100%; font-family: var(--tp-font); font-size: .875rem; color: var(--tp-ink); }
+
+/* Compact, low-contrast grid */
+.tp-readiness .b-grid-header { font-size: .75rem; font-weight: 600; color: var(--tp-muted); letter-spacing: .01em; }
+.tp-readiness .b-grid-row { border-bottom-color: var(--tp-line); }
+.tp-readiness .b-grid-cell { border-inline-end-color: var(--tp-line); }
+.tp-readiness .b-grid-row.b-selected, .tp-readiness .b-grid-row.b-hover { background: var(--tp-soft); }
+
+/* Status pills */
+.tp-readiness .tp-pill { display: inline-block; padding: 2px 9px; border-radius: 100px; font-size: .6875rem; font-weight: 600; line-height: 1.5; white-space: nowrap; border: 1px solid transparent; }
+.tp-readiness .tp-pill-scheduled { color: #2a3f8f; background: #e9edfb; }
+.tp-readiness .tp-pill-open { color: #705200; background: #fff3d6; }
+.tp-readiness .tp-pill-settled { color: #20592f; background: #e6f1e5; }
+.tp-readiness .tp-pill-pending { color: #4c514e; background: #eceeea; }
+.tp-readiness .tp-pill-unavailable { color: var(--tp-muted); background: transparent; border-color: var(--tp-line); font-weight: 500; }
+
+/* Date / detail column */
+.tp-readiness .tp-detail { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.tp-readiness .tp-date { font-variant-numeric: tabular-nums; color: var(--tp-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-readiness .tp-no-date { color: var(--tp-muted); font-style: italic; }
+.tp-readiness .tp-detail-note { color: var(--tp-muted); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Timeline bars and milestones take the row's tone */
+.tp-readiness .tp-tone-scheduled .b-gantt-task, .tp-readiness .tp-tone-scheduled.b-gantt-task { background: #6f86d9; }
+.tp-readiness .tp-tone-open .b-gantt-task, .tp-readiness .tp-tone-open.b-gantt-task { background: #d9a227; }
+.tp-readiness .tp-tone-settled .b-gantt-task, .tp-readiness .tp-tone-settled.b-gantt-task { background: #4f9a5f; }
+.tp-readiness .tp-tone-pending .b-gantt-task, .tp-readiness .tp-tone-pending.b-gantt-task { background: #9aa09b; }
+
+.tp-readiness-summary summary { cursor: pointer; font-weight: 600; }
+.tp-readiness-summary ul { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: .9375rem; }
+
+@media (max-width: 760px) {
+  .tp-readiness { height: 420px; }
+}

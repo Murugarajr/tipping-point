@@ -1,6 +1,98 @@
-# Tipping Point Scaffold
+# Tipping Point
 
-This repository contains the scaffold for the Tipping Point sandbox workshop booking application.
+Tipping Point is a Sandbox prototype for threshold-funded workshops. A host publishes a
+workshop with frozen, reviewed costs; the backend calculator shows the attendance at which
+the workshop becomes viable. Guests reserve a place with a PayPal Sandbox authorization, not
+a completed charge.
+
+**Intended payment design (not hosted-verified):** at the booking cutoff the campaign is
+decided. If it is viable, authorized payments are captured; if not, authorizations are
+released.
+
+**Current hosted status (10 November 2026):**
+
+- Hosted Sandbox authorize → cancel → void has been demonstrated.
+- PayPal checkout is **currently disabled** on the hosted service (no PayPal credentials are loaded).
+- Hosted capture, refunds, below-threshold release and automatic deadline settlement are
+  **not verified**. Capture and refund were exercised only against a local database
+  (`docs/evidence-log.md` §9).
+- Remote settlement is disabled on the Workflow service, and the deadline dispatcher is suspended.
+- The complete payment lifecycle is not production-ready.
+
+## Live demo
+
+- URL: <https://tipping-point-web.onrender.com>
+- Host pages (`/host`, merchant console, Campaign Intelligence, readiness timeline) require a
+  provisioned merchant sign-in. Public discovery currently lists no workshops: every published
+  workshop, including the demo workshop, is hidden from discovery (hiding is not access control).
+- Tested application commit: `a7dcfa96f6e7033a506e24944560c6e02d4a91b7` (merge of PR #2 into
+  `release/auto-deadline`), live as Render deploy `dep-dbpmm3t6e07s73dfg6d0`. Documentation
+  commits made after that are not part of the tested application build.
+
+## Architecture
+
+- **Backend:** FastAPI, SQLAlchemy and PostgreSQL, with Alembic migrations (schema head
+  `0007_workshop_visibility`). `/health/live` is liveness; `/health/ready` checks the database
+  and the exact expected schema revision.
+- **Frontend:** React, TypeScript and Vite (`frontend/`), built and served by the backend in hosted mode.
+- **Hosting and workflow infrastructure (Render):** one web service, one Render Workflow service
+  for settlement tasks, one cron dispatcher (suspended) and Render Postgres. Render is the
+  hosting platform, not one of the five integration milestones. See
+  [`docs/deployment-render.md`](docs/deployment-render.md).
+
+## Integration milestones
+
+There are five integration milestones. Render is described separately above.
+
+| Integration | What it does here | Hosted evidence | Known limitation |
+|---|---|---|---|
+| **Channel3** | Explicit material search in the host Workbench; eligible GBP offers stored as snapshots; a reviewed offer can feed draft costing | One hosted search returned offers (one provider request); a subsequent selection saved an offer into a draft's costing (10 Nov) | Search relevance and costing suitability not validated; no per-merchant rate limit on the Workbench search; whether that hosted selection was intended is unconfirmed |
+| **AG Studio** | Campaign Intelligence dashboard (`ag-studio` 3.0.0) with a registered Tipping Meter widget and the read-only Rescue Analyst (OpenRouter, `openai/gpt-4.1-mini`); the merchant console uses AG Grid Community 36.2.0 | Dashboard, Tipping Meter, Analyst status and merchant console passed the signed-in hosted smoke test (10 Nov); one validated Analyst run | See the licensing note below; dashboard report state is not saved between visits; Analyst rate limits are per server process |
+| **Bryntum** | Read-only readiness timeline (Bryntum Gantt Enterprise 8.0.0) for publication, booking window and cutoff | Signed-in hosted smoke test passed (10 Nov) | Trial licence key: the console reports "Trial license ends 24 December 2026", and a trial notice may appear; the timeline is read-only |
+| **PayPal** | Guest reservation with a PayPal **Sandbox** AUTHORIZE-intent order; cancellation queues a void; operator reconciliation releases it | Hosted Sandbox authorize → cancel → void on 8–9 Nov and again on 10 Nov | Checkout currently disabled; hosted capture, refunds, below-threshold release and automatic deadline settlement not verified (see the status above) |
+| **APIMatic** | PayPal Context Plugin used at development time to review the PayPal adapter against the PayPal Server SDK contract | Contract review recorded in [`docs/apimatic-integration.md`](docs/apimatic-integration.md); no mismatches found | Development-time assistance only; no runtime dependency; two recommendations (R1, R2) not applied |
+
+**Licensing notes.** AG Studio is a commercial product. The hosted frontend was built without
+an AG Studio licence key (`VITE_AG_STUDIO_LICENSE_KEY` was not set at build time), so AG Studio
+runs in its unlicensed mode as described by the vendor; the dashboard still passed the hosted
+smoke test. Bryntum Gantt runs with a trial licence key that expires on 24 December 2026.
+
+Further integration detail:
+
+- PayPal operator procedures and hosted demo reactivation: [`docs/paypal-sandbox-operator-test.md`](docs/paypal-sandbox-operator-test.md)
+- Dated verification evidence: [`docs/evidence-log.md`](docs/evidence-log.md) (hosted evidence in §10)
+- Render deployment and workflow: [`docs/deployment-render.md`](docs/deployment-render.md)
+- APIMatic review: [`docs/apimatic-integration.md`](docs/apimatic-integration.md)
+
+## Test evidence
+
+Counts are tied to the commit they ran on; not every suite was re-run on the final deployment.
+
+| Evidence | Commit | Result |
+|---|---|---|
+| Full backend suite | `a2fa1ed` (same file tree as `a7dcfa9`) | 525 passed, 0 failed, 0 skipped |
+| Frontend unit tests and typecheck | `a2fa1ed` | 91/91 passed; typecheck passed |
+| Campaign Intelligence browser suite (production and dev builds) | `a2fa1ed` | 13 + 13 passed |
+| Readiness timeline browser suite (production and dev builds) | `e6aed4a` | 9 checks passed in each build |
+| Hosted smoke test (public endpoints and signed-in pages) | `a7dcfa9`, deploy `dep-dbpmm3t6e07s73dfg6d0` | all checks passed (`docs/evidence-log.md` §10) |
+
+## Known limitations
+
+- PayPal checkout is disabled on the hosted service. Re-enabling it for a demo is a controlled,
+  separately approved procedure ([`docs/paypal-sandbox-operator-test.md`](docs/paypal-sandbox-operator-test.md)).
+- Hosted capture, refunds, below-threshold release and automatic deadline settlement are not
+  verified; remote settlement is disabled and the dispatcher is suspended.
+- The PayPal dashboard confirmation that the 10 November test authorization shows "Voided" is
+  pending; the application recorded it as voided.
+- Channel3 search relevance and costing suitability are not validated, and the Workbench search
+  has no per-merchant rate limit.
+- AG Studio runs unlicensed on the hosted build; Studio report state is not persisted.
+- Bryntum runs on a trial licence that ends 24 December 2026.
+- Rescue Analyst limits are enforced per server process, not globally.
+- Workshop delivery date, venue, duration and category are not stored.
+- One previously used draft was published as the 10 November PayPal test workshop. Whether its
+  frozen terms still contain the earlier Channel3 material line, and whether that reuse was
+  intended, are unresolved.
 
 ## Setup
 
@@ -27,6 +119,25 @@ This repository contains the scaffold for the Tipping Point sandbox workshop boo
    ```bash
    .venv/bin/python -m pytest
    ```
+
+### Running the backend suite in a clean checkout or worktree
+
+No private `.env` is needed. The pytest bootstrap (`tests/conftest.py`) forces the isolated
+`tipping_point_test` database and reads application settings only from the committed, non-secret
+`tests/local-test.env`, which sets exactly `TIPPING_POINT_ENV=local` and
+`TIPPING_POINT_ALLOW_INSECURE_DEV_COOKIES=true` (plain-HTTP test clients). It writes nothing to the process
+environment, so settings built with `_env_file=None` keep their secure defaults. Do not export
+`TIPPING_POINT_*` variables for test runs.
+
+Run from the checkout root, using the repository-root virtual environment. In a git worktree the root
+`.venv` has an editable install pointing at the primary checkout, so put this checkout's `packages/` first:
+
+```bash
+PYTHONPATH="$PWD/packages" /path/to/repo/.venv/bin/python -m pytest -q -rs
+```
+
+`tests/integration/test_guest_browser_api.py` additionally needs a built frontend (`npm --prefix frontend ci`
+and `npm --prefix frontend run build`) and installed Chrome; otherwise it is skipped.
 
 ## Package Structure
 
@@ -106,7 +217,8 @@ approved scope. A focused migration-free regression command is:
 
 ## API
 
-The minimal FastAPI app provides a single endpoint for health‑checking:
+Two health endpoints are provided. `GET /health/ready` additionally checks the database and the
+expected schema revision. The liveness endpoint:
 
 ```http
 GET /health/live
@@ -257,6 +369,10 @@ child-agent migrations or cleanup.
    states/times and distinguish this evidence from automated mocks. Never
    capture/refund/reauthorize or start a replacement order to bypass uncertainty.
 
+This procedure was later executed on the hosted service (authorize → cancel → void), recorded
+in `docs/evidence-log.md` §10. The hosted demo reactivation steps are in
+`docs/paypal-sandbox-operator-test.md`.
+
 
 
 ### Channel3 Material Costing
@@ -327,4 +443,4 @@ All exact versions are pinned in `requirements.txt` for reproducibility.
 
 - The `.venv` directory is ignored by Git and must not be committed.
 - No credentials or secrets are required for the health endpoint.
-- This scaffold provides the minimal foundation for further implementation of workshop booking, payment integration, and sponsor features.
+- Current hosted status and limitations are summarised at the top of this README.

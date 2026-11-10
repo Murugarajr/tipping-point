@@ -197,6 +197,7 @@ try {
     if (path === "/api/workshops") { code = publicUnavailable ? 503 : 200; body = publicUnavailable ? { detail: "unavailable" } : publicItem() ? [publicItem()] : []; }
     if (path.startsWith("/api/workshops/")) { code = path === `/api/workshops/${workshopId}` && publicItem() ? 200 : 404; body = code === 200 ? publicItem() : { detail: "published workshop not found" }; }
     if (path === "/api/merchant/logout") { code = 200; body = { status: "logged out" }; authMode = "anonymous"; }
+    apiCalls.at(-1).code = code;  // recorded for failure diagnostics
     void cdp("Fetch.fulfillRequest", { requestId, responseCode: code, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body)).toString("base64") }).catch((error) => errors.push(error.message));
   });
   await cdp("Fetch.enable", { patterns: [{ urlPattern: `${base}/api/*` }] });
@@ -518,8 +519,20 @@ try {
   assert.match(await evaluate("document.querySelector('.workbench [role=alert]').innerText"), /after booking open/);
   assert.equal(apiCalls.filter((item) => item.path === "/api/merchant/workshops" && item.method === "POST").length, createCount);
   await setField("Booking cutoff", validClose);
+  const callsBeforeSave = apiCalls.length, saveClickedAt = Date.now();
   await click(".workbench .host-page-heading .host-button");
-  await until(() => evaluate(`location.pathname.endsWith('${workshopId}') && !!document.querySelector('.workbench-status')`), "manual draft persisted");
+  try {
+    await until(() => evaluate(`location.pathname.endsWith('${workshopId}') && !!document.querySelector('.workbench-status')`), "manual draft persisted");
+    console.log(`manual draft persisted ${Date.now() - saveClickedAt} ms after the save click`);
+  } catch (error) {
+    // Evidence only: which stage (request, response, navigation, render) did not happen. No retry.
+    const state = await evaluate(`({ path: location.pathname, hash: location.hash, h1: document.querySelector('main h1, #root h1')?.innerText ?? null,
+      alert: document.querySelector('.workbench [role=alert]')?.innerText ?? null, status: !!document.querySelector('.workbench-status'),
+      workbench: !!document.querySelector('.workbench'), saveButton: (() => { const b = document.querySelector('.workbench .host-page-heading .host-button'); return b ? { text: b.innerText, disabled: b.disabled } : null; })() })`).catch((e) => ({ evaluateError: e.message }));
+    const calls = apiCalls.slice(callsBeforeSave).map(({ method, path, code }) => `${method} ${path} -> ${code}`);
+    console.error(`manual draft save diagnostics after ${Date.now() - saveClickedAt} ms: ${JSON.stringify({ calls, state })}`);
+    throw error;
+  }
   await click(".workbench-tabs button:nth-child(2)");
   await setField("Material name", "box", ".manual-material-form");
   await setField("Assumed pack price", "3.50", ".manual-material-form");

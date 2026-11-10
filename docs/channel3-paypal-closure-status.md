@@ -1,5 +1,8 @@
 # Narrow closure — incomplete
 
+> **Historical review (2026-11-06).** Superseded by the current status in `README.md` and the
+> hosted evidence in `docs/evidence-log.md` §10. The text below is unchanged.
+
 Review date: 2026-11-06. Material-costing code provisionally accepted;
 **live Channel3 verification incomplete**.
 

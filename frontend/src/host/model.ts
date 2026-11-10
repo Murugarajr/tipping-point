@@ -3,11 +3,17 @@ import type { DraftPayload, MaterialInput, SettlementStatus, ViabilityPreview, W
 export const sections = ["basics", "materials", "economics", "review"] as const;
 export type Section = typeof sections[number];
 export const workshopRoute = /^\/host\/workshops\/(new|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+/** Read-only AG Studio Campaign Intelligence page for one saved workshop. */
+export const intelligenceRoute = /^\/host\/workshops\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/intelligence$/i;
+/** Read-only Bryntum readiness timeline for one saved workshop. */
+export const readinessRoute = /^\/host\/workshops\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/readiness$/i;
 
 export function safeHostReturn(value: string | null): string {
   if (!value || !/^\/host(?:\/|$)/.test(value) || value.includes("\\") || value.startsWith("//")) return "/host";
   const url = new URL(value, "http://internal.invalid");
-  if (url.origin !== "http://internal.invalid" || url.search || (url.pathname !== "/host" && !workshopRoute.test(url.pathname))) return "/host";
+  if (url.origin !== "http://internal.invalid" || url.search
+    || (url.pathname !== "/host" && url.pathname !== "/host/console" && !workshopRoute.test(url.pathname) && !intelligenceRoute.test(url.pathname) && !readinessRoute.test(url.pathname))) return "/host";
+  if (url.pathname === "/host/console" || intelligenceRoute.test(url.pathname) || readinessRoute.test(url.pathname)) return url.pathname;
   return url.pathname + (sections.includes(url.hash.slice(1) as Section) ? url.hash : "");
 }
 export function poundsToMinor(raw: string): number | null {

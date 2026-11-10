@@ -22,6 +22,10 @@ dependencies = [
 dev = [
     "pytest",
 ]
+# Render Workflow service and cron dispatcher (pinned in requirements-render.txt).
+render = [
+    "render==1.8.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["packages/tipping_point"]

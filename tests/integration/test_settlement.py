@@ -40,6 +40,7 @@ class Provider:
         self.timeout_capture, self.crash_capture = set(), set()
         self.malformed_capture = set()
         self.timeout_refund = set()
+        self.timeout_void = set()  # void applied at the provider, response lost
         self.calls, self.fees = [], {}
         self.before_capture = None
         self.before_refund = None
@@ -120,6 +121,9 @@ class Provider:
         if path.endswith("/void"):
             assert self.captures.get(b.id) not in ("COMPLETED", "PENDING"), "Cannot void a captured payment"
             self.voided.add(b.id)
+            if b.id in self.timeout_void:
+                self.timeout_void.remove(b.id)
+                raise httpx.ReadTimeout("offline unknown void", request=request)
             return httpx.Response(204)
         if "/checkout/orders/" in path:
             return httpx.Response(200, json=self.order(b))

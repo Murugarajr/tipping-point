@@ -163,6 +163,8 @@ class SettlementStatusOut(BaseModel):
     refund_pending: int
     review_required: bool
     settlement_deadline: datetime | None
+    # Read-only: when the deadline decision was frozen (campaign_decisions.frozen_at); null before a decision.
+    decided_at: datetime | None = None
     fee_basis: Literal["estimated", "actual", "mixed"]
     actual_fees_minor: int | None
     estimated_fees_minor: int | None
@@ -180,6 +182,8 @@ class CampaignOut(BaseModel):
     terms_version: int
     terms_id: str
     terms_snapshot_hash: str
+    # Read-only: when the campaign was published (campaigns.created_at).
+    published_at: datetime | None = None
     settlement: SettlementStatusOut | None = None
 
 
