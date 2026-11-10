@@ -280,6 +280,7 @@ try {
   await until(() => evaluate("!!document.querySelector('.ci-analyst-off')"), "analyst not configured");
   assert.match(await text(".ci-analyst-off"), /Analyst not configured\. Analyst not configured: an operator has not enabled it/);
   assert.equal(await evaluate("!!document.querySelector('.ci-analyst textarea')"), false, "no question box when not configured");
+  assert.equal(await text(".ci-analyst-disclaimer"), "Analyst output is informational and is not financial advice.", "disclaimer shown while disabled");
   assert.match(await meterText(), /admitted of 8/, "dashboard unaffected");
   passed("analyst not configured: clear message, no question box, dashboard intact");
 
@@ -289,7 +290,8 @@ try {
   await until(() => evaluate("!!document.querySelector('.ci-analyst-suggestions button')"), "suggestions");
   assert.equal(await text(".ci-analyst-connection"), "OpenRouter · vendor/tool-model");
   const suggestions = await evaluate("[...document.querySelectorAll('.ci-analyst-suggestions button')].map(b => b.innerText)");
-  assert.deepEqual(suggestions, ["Explain this workshop's tipping point.", "Why can attendance five be non-viable when four is viable?", "Show revenue versus total costs.", "Which materials drive the budget?"]);
+  assert.deepEqual(suggestions, ["Explain this workshop's tipping point.", "What could make this workshop non-viable?", "Show revenue versus total costs.", "Which materials drive the budget?"]);
+  assert.equal(await text(".ci-analyst-disclaimer"), "Analyst output is informational and is not financial advice.", "disclaimer shown while available");
   const widgetsBefore = await evaluate("document.querySelectorAll('.ci-studio .ag-studio-layout-widget').length");
   holdAnalyst = true;
   await evaluate("document.querySelectorAll('.ci-analyst-suggestions button')[2].click()");

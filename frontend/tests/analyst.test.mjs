@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  PRESET_LABELS, SUGGESTED_QUESTIONS, analystErrorText, analystWidgetId, answerParagraphs, applyVisualizations, boundedHistory,
+  ANALYST_DISCLAIMER, PRESET_LABELS, SUGGESTED_QUESTIONS, analystErrorText, analystWidgetId, answerParagraphs, applyVisualizations, boundedHistory,
   connectionLabel, presetWidget, safeTitle, statusText,
 } from "../src/host/intelligence/analystModel.ts";
 
@@ -11,9 +11,14 @@ const report = (p = page({ meter: { type: "tipping-meter" } }, { meter: { xTrack
 
 test("suggested questions are the approved four", () => {
   assert.deepEqual([...SUGGESTED_QUESTIONS], [
-    "Explain this workshop's tipping point.", "Why can attendance five be non-viable when four is viable?",
+    "Explain this workshop's tipping point.", "What could make this workshop non-viable?",
     "Show revenue versus total costs.", "Which materials drive the budget?",
   ]);
+  assert.ok(!SUGGESTED_QUESTIONS.some((q) => /attendance five|four is viable/.test(q)), "no test-scenario-specific question");
+});
+
+test("disclaimer is the approved fixed sentence", () => {
+  assert.equal(ANALYST_DISCLAIMER, "Analyst output is informational and is not financial advice.");
 });
 
 test("history is bounded to the server's limits and always ends with the user's question", () => {
