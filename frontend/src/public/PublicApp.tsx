@@ -42,7 +42,7 @@ function Footer() {
 function Hero() {
   return <section className="hero" aria-labelledby="hero-title">
     <div className="hero-copy">
-      <p className="kicker"><svg className="little-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M12 1v22M1 12h22M4 4l16 16M4 20 20 4" /></svg> Small groups. Real possibilities.</p>
+      <p className="kicker"><svg className="little-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M2 19h20" strokeLinecap="round" /><g fill="currentColor" stroke="none"><circle cx="6" cy="14.5" r="2.25" /><circle cx="12" cy="14.5" r="2.25" /><circle cx="18" cy="14.5" r="2.25" /><circle cx="12" cy="7.5" r="2.25" /></g></svg> Small groups. Real possibilities.</p>
       <h1 id="hero-title">Good workshops.<br />Enough people.<br /><span>Let’s make<br className="desktop-break" /> it happen.</span></h1>
       <p className="hero-intro">Discover hands-on experiences and help independent hosts turn a good idea into a workshop that can actually run.</p>
       <div className="hero-actions"><LinkButton href="/workshops">Explore workshops</LinkButton><a className="text-link" href="#how-it-works">See how it works<Arrow diagonal /></a></div>
@@ -106,7 +106,7 @@ function Difference() {
       <article className="difference-goal"><span className="kicker">02 / A visible goal</span><h3>Not a mystery.<br />A shared milestone.</h3><p>See the goal and cutoff. The actual cohort still needs cost and payment checks.</p><div className="goal-line" aria-hidden="true"><i /><i /><i /><i /><i /></div></article>
       <article className="difference-states"><span className="kicker">03 / Clear payment states</span><h3>Say what’s happened.<br />Not what’s hoped for.</h3><div className="state-chips"><span>Authorized</span><Arrow /><span>Collecting</span><Arrow /><span>Completed</span></div><p>Illustrative states, not current payments. Release requested, refund processing and review required stay visible too.</p></article>
       <article className="difference-small"><span>04 / Open doors</span><h3>Explore without<br />an account.</h3><p>Curiosity should not need a password.</p></article>
-      <article className="difference-small"><span>05 / Readiness matters</span><h3>Beyond the<br />booking count.</h3><p>Preparation belongs alongside financial progress in the planned host experience.</p></article>
+      <article className="difference-small"><span>05 / Readiness matters</span><h3>Beyond the<br />booking count.</h3><p>Preparation sits alongside financial progress, with a readiness timeline for every campaign.</p></article>
       <article className="difference-small"><span>06 / Traceable inputs</span><h3>Facts, not<br />wishful thinking.</h3><p>Keep sourced offers and reviewed assumptions distinct. Scenarios are not applied changes.</p></article>
     </div>
   </section>;
@@ -115,21 +115,22 @@ function Difference() {
 function HostSection() {
   return <section className="section host-section" id="for-hosts" aria-labelledby="host-title">
     <div className="host-copy"><p className="kicker">For the people who bring people together</p><h2 id="host-title">You bring the idea.<br /><span>See what it takes<br />to run.</span></h2><p>A great workshop is more than a full room. It’s the right materials, a considered budget, and a plan you can explain.</p><div className="hero-actions"><LinkButton href="/host/login">Host sign in</LinkButton><a className="text-link" href="/example-plan">Explore an example plan<Arrow diagonal /></a></div><p className="small-copy">Existing provisioned hosts only. No public registration.</p></div>
-    <div className="host-plan-preview"><span className="outline-pill">The intended host journey</span><ol>{["Draft the experience", "Review materials & pack quantities", "Preview attendance & cost scenarios", "Publish clear, immutable terms", "Track readiness & payment outcomes"].map((text, index) => <li key={text}><span>0{index + 1}</span>{text}<Arrow diagonal /></li>)}</ol><p>Drafts, server previews and publication exist today. Guest Sandbox reservation status is available; readiness and collection remain planned.</p></div>
+    <div className="host-plan-preview"><span className="outline-pill">The intended host journey</span><ol>{["Draft the experience", "Review materials & pack quantities", "Preview attendance & cost scenarios", "Publish clear, immutable terms", "Track readiness & payment outcomes"].map((text, index) => <li key={text}><span>0{index + 1}</span>{text}<Arrow diagonal /></li>)}</ol><p>Drafts, server previews, publication, the readiness timeline and Sandbox reservations exist today. Collection at the deadline is designed but not yet verified on the hosted site.</p></div>
   </section>;
 }
 
 const integrations = [
-  ["PayPal Sandbox", "Backend adapter", "Authorization-intent orders, authorization and void operations in server code. Offline tests exist; no live verification claimed here. Guest checkout connects eligible published workshops to Sandbox authorization. No live verification is claimed by this frontend."],
-  ["Channel3", "Backend adapter", "Material-offer search and selection code exists. Live contract verification remains incomplete; examples on this page are not Channel3 results."],
-  ["AG Studio / AG Grid", "Planned", "Host analytics, a Tipping Meter and bounded scenario analysis. No Studio component is installed in this frontend."],
-  ["Bryntum", "Planned", "An operational dependency timeline for workshop readiness. The example plan is editorial content, not a Bryntum integration."],
-  ["APIMatic", "Not verified", "Intended development-time PayPal API context. Plugin use is not established by this frontend implementation."],
-  ["Render", "Planned", "Same-origin hosting and background workflow execution. No hosted deployment or workflow run is claimed."],
+  ["PayPal Sandbox", "Sandbox verified", "Guests reserve a place with an authorization-intent Sandbox order: a hold, not a charge. On this hosted site, reserve → authorise → cancel → void was completed and confirmed in PayPal's own event log. Checkout is currently paused after testing; collection at the deadline is the designed flow and is not yet verified on the hosted site."],
+  ["Channel3", "Live", "Hosts search real supplier offers only when they ask to. Eligible GBP offers are saved as dated snapshots and used for costing only after the host reviews suitability and pack size. Offers are not verified as suitable, in stock or correctly priced."],
+  ["AG Studio / AG Grid", "Live", "AG Studio powers the Campaign Intelligence dashboard, with a custom Tipping Meter, cost curves and a read-only Rescue Analyst. AG Grid powers the host console, with every workshop at a glance. AG Studio currently runs without a production licence."],
+  ["Bryntum", "Live", "Bryntum Gantt shows each campaign's readiness timeline: publication, booking window and booking cutoff, in UK time. It is read-only and does not schedule payments. Trial licence."],
+  ["OpenRouter", "Live", "Provides the model behind the Rescue Analyst, which explains a workshop's saved figures to its host. It is read-only: no edits, bookings or payments."],
+  ["APIMatic", "Used in development", "The APIMatic PayPal Context Plugin was used to review our PayPal adapter against the PayPal Server SDK contract: endpoints, idempotency, errors and money. No mismatches were found. It adds no runtime dependency."],
+  ["Render", "Live", "This site runs on Render: one web service for the API and frontend, Render Postgres, and a Workflow service. Deploys are pinned to exact commits and health-checked. Remote settlement is currently disabled."],
 ] as const;
 
 function BuiltWith() {
-  return <section className="section built-with" aria-labelledby="built-title"><div className="section-heading"><div><p className="kicker">Behind the scenes</p><h2 id="built-title">Useful technology.<br />Honest about the stage.</h2></div><p>A prototype in progress.<br />Integration is not endorsement.</p></div><div className="integration-list">{integrations.map(([name, status, text]) => <details key={name}><summary><strong>{name}</strong><span className="integration-status">{status}</span><span aria-hidden="true">+</span></summary><p>{text}</p></details>)}</div></section>;
+  return <section className="section built-with" aria-labelledby="built-title"><div className="section-heading"><div><p className="kicker">Behind the scenes</p><h2 id="built-title">Useful technology.<br />Honest about the stage.</h2></div><p>A working PayPal Sandbox prototype.<br />Integration is not endorsement.</p></div><div className="integration-list">{integrations.map(([name, status, text]) => <details key={name}><summary><strong>{name}</strong><span className="integration-status">{status}</span><span aria-hidden="true">+</span></summary><p>{text}</p></details>)}</div></section>;
 }
 
 function FAQ() {
