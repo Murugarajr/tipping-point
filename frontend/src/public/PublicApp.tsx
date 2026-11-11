@@ -42,7 +42,7 @@ function Footer() {
 function Hero() {
   return <section className="hero" aria-labelledby="hero-title">
     <div className="hero-copy">
-      <p className="kicker"><svg className="little-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M12 1v22M1 12h22M4 4l16 16M4 20 20 4" /></svg> Small groups. Real possibilities.</p>
+      <p className="kicker"><svg className="little-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M2 19h20" strokeLinecap="round" /><g fill="currentColor" stroke="none"><circle cx="6" cy="14.5" r="2.25" /><circle cx="12" cy="14.5" r="2.25" /><circle cx="18" cy="14.5" r="2.25" /><circle cx="12" cy="7.5" r="2.25" /></g></svg> Small groups. Real possibilities.</p>
       <h1 id="hero-title">Good workshops.<br />Enough people.<br /><span>Let’s make<br className="desktop-break" /> it happen.</span></h1>
       <p className="hero-intro">Discover hands-on experiences and help independent hosts turn a good idea into a workshop that can actually run.</p>
       <div className="hero-actions"><LinkButton href="/workshops">Explore workshops</LinkButton><a className="text-link" href="#how-it-works">See how it works<Arrow diagonal /></a></div>
